@@ -128,3 +128,9 @@ Read [SECURITY.md](SECURITY.md) before reporting a vulnerability and
 - [Migrations](docs/MIGRATIONS.md)
 - [Release process](docs/RELEASES.md)
 - [Public-release checklist](docs/PUBLICATION.md)
+
+## License
+
+The code and documentation in this repository are distributed under the
+[Apache License 2.0](LICENSE). The project license does not grant rights over
+Palworld or any other trademark, game or saved content.

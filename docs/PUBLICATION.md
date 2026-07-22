@@ -4,18 +4,24 @@ La visibilidad no debe cambiar hasta completar todos los puntos.
 
 ## Código y seguridad
 
-- [ ] `LICENSE` elegido por el propietario y derechos sobre el código confirmados.
-- [ ] CI verde en el commit candidato.
-- [ ] `pip-audit`, Gitleaks, cobertura y E2E sin hallazgos.
+- [x] `LICENSE` Apache-2.0 incluido desde la fuente oficial.
+- [x] Derechos sobre el código confirmados por el propietario al elegir Apache-2.0.
+- [ ] CI verde en el commit candidato de licencia.
+- [x] `pip-audit`, Gitleaks, cobertura y E2E sin hallazgos.
 - [ ] Prueba manual real con PalServer en Windows documentada.
-- [ ] Historial Git revisado sin secretos, saves ni datos personales.
-- [ ] Release y checksums reproducibles creados.
+- [x] Historial Git revisado sin secretos, saves ni datos personales.
+- [x] Artefacto candidato y checksum generados dos veces con resultado idéntico.
+- [ ] Tag firmado y release estable creados después de la aceptación manual.
+
+La aceptación manual con PalServer se ha pospuesto conscientemente. Mientras
+permanezca pendiente se puede generar un artefacto candidato para verificar su
+reproducibilidad, pero no crear el tag ni el release público.
 
 ## Comunidad
 
-- [ ] README, soporte, contribución, conducta y política de seguridad revisados.
-- [ ] Disclaimer de marcas visible.
-- [ ] Issues y Discussions preparados.
+- [x] README, soporte, contribución, conducta y política de seguridad revisados.
+- [x] Disclaimer de marcas visible.
+- [x] Issues y Discussions preparados.
 - [ ] Respuesta privada de vulnerabilidades asignada a un mantenedor.
 
 ## Cambio de visibilidad

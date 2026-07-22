@@ -1,7 +1,8 @@
 FROM python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93
 
 LABEL org.opencontainers.image.source="https://github.com/Ayerdi/dedicated-server-save-sync" \
-      org.opencontainers.image.description="Concurrency-safe save synchronization for dedicated game servers"
+      org.opencontainers.image.description="Concurrency-safe save synchronization for dedicated game servers" \
+      org.opencontainers.image.licenses="Apache-2.0"
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app

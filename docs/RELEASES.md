@@ -7,6 +7,8 @@
 3. Ejecutar `bash scripts/build-release.sh 2.0.0`.
 4. Ejecutar dos veces y comprobar que el SHA-256 no cambia.
 5. Inspeccionar el ZIP: no debe contener `config.json`, `data/`, logs ni saves.
+6. Completar [la aceptación manual de Palworld](../client/MANUAL-ACCEPTANCE.md)
+   antes de crear el primer tag estable que incluya ese adaptador.
 
 El builder usa orden, timestamps y permisos deterministas. Produce:
 
@@ -16,6 +18,9 @@ dist/dedicated-server-save-sync-client-v2.0.0.zip.sha256
 ```
 
 ## Publicación
+
+No ejecutar esta sección mientras la aceptación manual aplicable figure como
+pendiente. La generación local del ZIP no publica ni etiqueta nada.
 
 ```bash
 git tag -s v2.0.0 -m 'release: v2.0.0'
