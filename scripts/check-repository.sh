@@ -26,7 +26,7 @@ fi
 for file in "${tracked_files[@]}"; do
   normalized="${file#./}"
   case "${normalized}" in
-    .env|client/config.json)
+    .env|.env.local|client/config.json)
       printf 'Archivo privado incluido: %s\n' "${normalized}" >&2
       exit 1
       ;;

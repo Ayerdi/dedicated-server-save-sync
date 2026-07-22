@@ -54,15 +54,27 @@ def render(env_path, template_path, output_path, game_path):
         ),
     }
     for marker, value in replacements.items():
-        if template.count(marker) != 1 or not value:
+        count = template.count(marker)
+        if count == 0:
+            continue
+        if count != 1 or not value:
             raise ValueError(f"Marcador o valor de despliegue inválido: {marker}")
         template = template.replace(marker, json.dumps(value))
 
     host = values.get("SAVE_SYNC_PUBLIC_HOST", "")
     host_marker = "__SAVE_SYNC_PUBLIC_HOST__"
-    if not re.fullmatch(r"[A-Za-z0-9.-]+", host) or template.count(host_marker) != 2:
+    if not re.fullmatch(r"[A-Za-z0-9.-]+", host) or template.count(host_marker) < 1:
         raise ValueError("SAVE_SYNC_PUBLIC_HOST o sus marcadores no son válidos")
     template = template.replace(host_marker, host)
+
+    cert_resolver = values.get("SAVE_SYNC_TRAEFIK_CERT_RESOLVER", "")
+    cert_marker = "__SAVE_SYNC_CERT_RESOLVER__"
+    if (
+        not re.fullmatch(r"[A-Za-z0-9_.-]+", cert_resolver)
+        or template.count(cert_marker) < 1
+    ):
+        raise ValueError("SAVE_SYNC_TRAEFIK_CERT_RESOLVER no es válido")
+    template = template.replace(cert_marker, cert_resolver)
 
     game_marker = "__SAVE_SYNC_GAME_KEY__"
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", game_key):

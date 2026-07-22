@@ -5,9 +5,11 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 PUBLIC_BASE_URL="${SAVE_SYNC_PUBLIC_BASE_URL:?Define SAVE_SYNC_PUBLIC_BASE_URL}"
 GAME_KEY="${SAVE_SYNC_GAME_KEY:?Define SAVE_SYNC_GAME_KEY}"
+PANEL_MODE="${SAVE_SYNC_PANEL_MODE:-authentik}"
 [[ "${GAME_KEY}" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || exit 2
 COMPOSE_PROJECT="${SAVE_SYNC_COMPOSE_PROJECT:-save-sync-${GAME_KEY}}"
 CONTAINER_NAME="save_sync_${GAME_KEY}"
+export SAVE_SYNC_CONTAINER_NAME="${CONTAINER_NAME}"
 
 log() {
   printf '[save-sync-verify] %s\n' "$*"
@@ -29,17 +31,20 @@ api_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_
   "${PUBLIC_BASE_URL}/api/games/${GAME_KEY}/status")"
 [[ "${api_status}" == "401" ]] || { log "La API sin Bearer devolvio ${api_status}, se esperaba 401."; exit 1; }
 
-panel_headers="$(mktemp)"
-trap 'rm -f -- "${panel_headers}"' EXIT
-panel_status="$(curl --silent --show-error --output /dev/null --dump-header "${panel_headers}" --write-out '%{http_code}' \
-  "${PUBLIC_BASE_URL}/games/${GAME_KEY}")"
-case "${panel_status}" in
-  301|302|303|307|308) ;;
-  *) log "El panel anonimo devolvio ${panel_status}, se esperaba redireccion Authentik."; exit 1 ;;
-esac
-if ! grep -Eiq '^location: .+' "${panel_headers}"; then
-  log "La redireccion del panel no incluye Location."
-  exit 1
+if [[ "${PANEL_MODE}" == "authentik" ]]; then
+  panel_headers="$(mktemp)"
+  trap 'rm -f -- "${panel_headers}"' EXIT
+  panel_status="$(curl --silent --show-error --output /dev/null --dump-header "${panel_headers}" --write-out '%{http_code}' \
+    "${PUBLIC_BASE_URL}/games/${GAME_KEY}")"
+  case "${panel_status}" in
+    301|302|303|307|308) ;;
+    *) log "El panel anonimo devolvio ${panel_status}, se esperaba redireccion Authentik."; exit 1 ;;
+  esac
+  if ! grep -Eiq '^location: .+' "${panel_headers}"; then
+    log "La redireccion del panel no incluye Location."
+    exit 1
+  fi
+  log "OK: backend healthy, sin puertos publicados, API=401 y panel protegido por Authentik."
+else
+  log "OK: backend healthy, sin puertos publicados y API=401; panel deshabilitado."
 fi
-
-log "OK: backend healthy, sin puertos publicados, API=401 y panel protegido por Authentik."

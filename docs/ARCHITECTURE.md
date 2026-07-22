@@ -53,6 +53,7 @@ se reconcilian al arrancar o tras otra publicación.
 
 - SQLite usa WAL y `busy_timeout`.
 - La creación/migración del esquema se protege con `flock` multiproceso.
+- `PRAGMA user_version=2` permite detectar upgrades y rechazar downgrades.
 - Dos adquisiciones simultáneas producen un único ganador.
 - Dos uploads sobre la misma base no pueden publicar la misma versión.
 - La limpieza física permanece bajo el mismo lock de escritura que el snapshot
@@ -61,6 +62,8 @@ se reconcilian al arrancar o tras otra publicación.
 Cada despliegue gestiona un único `gameKey` y requiere una sola instancia del
 servicio sobre filesystem Linux local. Otro juego usa otro proyecto Compose,
 base y volumen. Esta separación es también el aislamiento entre juegos.
+
+La política de migración y backup está en [MIGRATIONS.md](MIGRATIONS.md).
 
 ## Identidad de la partida
 

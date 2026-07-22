@@ -1,8 +1,10 @@
 import hashlib
+import sqlite3
 
 import pytest
 
 from save_sync import create_app
+from save_sync.app import SCHEMA_VERSION
 
 
 def app_config(tmp_path, **overrides):
@@ -51,4 +53,32 @@ def test_invalid_identity_configuration_fails_closed(tmp_path, identities):
     with pytest.raises(RuntimeError):
         create_app(
             app_config(tmp_path, SAVE_SYNC_USER_IDENTITIES_JSON=identities)
+        )
+
+
+def test_schema_version_is_recorded_and_idempotent(tmp_path):
+    config = app_config(tmp_path)
+    app = create_app(config)
+    with app.extensions["save_sync_connect"]() as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+
+    restarted = create_app(config)
+    with restarted.extensions["save_sync_connect"]() as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+
+
+def test_newer_schema_is_rejected_without_downgrade(tmp_path):
+    storage = tmp_path / "future"
+    storage.mkdir()
+    db_path = storage / "save-sync.sqlite3"
+    with sqlite3.connect(db_path) as db:
+        db.execute("PRAGMA user_version=999")
+
+    with pytest.raises(RuntimeError, match="no se realizará downgrade"):
+        create_app(
+            app_config(
+                tmp_path,
+                SAVE_SYNC_STORAGE_PATH=str(storage),
+                SAVE_SYNC_DB_PATH=str(db_path),
+            )
         )

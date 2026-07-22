@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Reportar una vulnerabilidad de forma privada
+    url: https://github.com/Ayerdi/dedicated-server-save-sync/security/advisories/new
+    about: No publiques secretos, saves ni detalles explotables en una incidencia.
+  - name: Preguntas y soporte
+    url: https://github.com/Ayerdi/dedicated-server-save-sync/discussions
+    about: Consulta antes la documentación y no incluyas datos privados.

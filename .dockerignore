@@ -5,9 +5,12 @@
 __pycache__
 .pytest_cache
 .ruff_cache
+.coverage
+htmlcov
 client
 config
 data
+dist
 docs
 scripts
 tests

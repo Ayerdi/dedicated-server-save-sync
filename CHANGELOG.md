@@ -2,6 +2,11 @@
 
 ## 2.0.0
 
+- Actualiza Flask a 3.1.3 por la corrección de seguridad de la rama 3.1.
+- Bloquea dependencias transitivas con hashes y añade `pip-audit` y cobertura.
+- Añade E2E Docker aislado, modo API-only y `certResolver` parametrizable.
+- Registra `PRAGMA user_version=2` y rechaza downgrades implícitos.
+- Añade preparación comunitaria, release reproducible y checklist público.
 - Convierte el backend en motor de una instancia por `gameKey`.
 - Añade rutas canónicas `/api/games/{gameKey}` y cabeceras `X-Save-Sync-*`.
 - Generaliza `world_guid` como `save_identity` configurable por adaptador.

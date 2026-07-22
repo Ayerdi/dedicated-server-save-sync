@@ -1,6 +1,6 @@
 services:
   dedicated-server-save-sync:
-    container_name: save_sync_${SAVE_SYNC_GAME_KEY:-palworld}
+    container_name: ${SAVE_SYNC_CONTAINER_NAME:-save_sync_palworld}
     build: .
     restart: unless-stopped
     env_file:

@@ -19,6 +19,9 @@
    permisos mediante un contenedor efímero limitado.
 5. Verificar que Traefik y el outpost Authentik comparten la red configurada.
 
+Si solo se necesita la API Bearer, usa `SAVE_SYNC_PANEL_MODE=disabled`: se
+renderiza una ruta sin panel ni ForwardAuth. No se crea un panel anónimo.
+
 No usar almacenamiento NFS/SMB para SQLite. No situar el volumen dentro del
 document root del servidor web.
 
@@ -34,6 +37,7 @@ ser una operación administrativa diseñada y probada, no una copia de SQLite.
 |---|---|
 | `SAVE_SYNC_GAME_KEY` | Identificador del adaptador/despliegue |
 | `SAVE_SYNC_GAME_CONFIG_PATH` | JSON del juego dentro del contenedor |
+| `SAVE_SYNC_CONTAINER_NAME` | Nombre único; el deploy lo deriva del juego |
 | `SAVE_SYNC_HOST_STORAGE_PATH` | Directorio privado absoluto del host |
 | `SAVE_SYNC_STORAGE_PATH` | Montaje interno, normalmente `/data/save-sync` |
 | `SAVE_SYNC_DB_PATH` | SQLite dentro del montaje |
@@ -43,6 +47,8 @@ ser una operación administrativa diseñada y probada, no una copia de SQLite.
 | `SAVE_SYNC_TRAEFIK_DYNAMIC_DIR` | Directorio dinámico de Traefik en el host |
 | `SAVE_SYNC_PROXY_NETWORK` | Red Docker externa compartida |
 | `SAVE_SYNC_AUTHENTIK_FORWARD_AUTH_URL` | Endpoint interno ForwardAuth |
+| `SAVE_SYNC_PANEL_MODE` | `authentik` o `disabled` |
+| `SAVE_SYNC_TRAEFIK_CERT_RESOLVER` | Resolver TLS existente en Traefik |
 | `SAVE_SYNC_WEB_USERS` | Allowlist `usuario:rol` |
 | `SAVE_SYNC_USER_IDENTITIES_JSON` | Display names y slots de retención |
 | `SAVE_SYNC_MAX_UPLOAD_SIZE` | Tamaño ZIP máximo |
@@ -83,6 +89,10 @@ publica la ruta mediante rename y comprueba:
 - API anónima `401`;
 - panel anónimo redirigido al login.
 
+En modo `disabled` verifica API y contenedor, y omite deliberadamente la ruta
+del panel. La administración sigue disponible por endpoints Bearer con un token
+de rol `admin`.
+
 El script valida que `SAVE_SYNC_GAME_KEY` coincida con
 `config/games/<gameKey>.json`. Los nombres de proyecto, contenedor, alias de red
 y ruta Traefik incorporan el juego para no colisionar.
@@ -100,6 +110,10 @@ SAVE_SYNC_COMPOSE_PROJECT=save-sync-example-game
 
 Añadir `config/games/example-game.json` y el adaptador Windows correspondiente.
 No compartir base de datos ni directorio de almacenamiento entre juegos.
+
+Para una validación sin infraestructura externa consulta
+[LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md). Ese modo enlaza solo localhost y
+no debe exponerse a Internet.
 
 ## Primer token
 

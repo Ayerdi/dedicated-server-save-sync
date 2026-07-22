@@ -67,7 +67,7 @@ http:
       entryPoints:
         - websecure
       tls:
-        certResolver: myresolver
+        certResolver: __SAVE_SYNC_CERT_RESOLVER__
       middlewares:
         - save-sync-__SAVE_SYNC_GAME_KEY__-clear-untrusted-auth
         - save-sync-__SAVE_SYNC_GAME_KEY__-security-headers
@@ -80,7 +80,7 @@ http:
       entryPoints:
         - websecure
       tls:
-        certResolver: myresolver
+        certResolver: __SAVE_SYNC_CERT_RESOLVER__
       middlewares:
         - save-sync-__SAVE_SYNC_GAME_KEY__-clear-untrusted-auth
         - save-sync-__SAVE_SYNC_GAME_KEY__-forwardauth

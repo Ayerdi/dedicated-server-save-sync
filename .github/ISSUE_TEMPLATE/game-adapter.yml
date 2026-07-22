@@ -1,0 +1,37 @@
+name: Nuevo adaptador de juego
+description: Solicita soporte para otro servidor dedicado.
+title: "[Adapter]: "
+labels:
+  - game-adapter
+body:
+  - type: input
+    id: game
+    attributes:
+      label: Juego y versión del servidor
+    validations:
+      required: true
+  - type: textarea
+    id: save
+    attributes:
+      label: Mecanismo documentado de guardado y cierre
+    validations:
+      required: true
+  - type: textarea
+    id: identity
+    attributes:
+      label: Identificador estable de mundo, campaña o slot
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Archivos que forman una copia consistente
+    validations:
+      required: true
+  - type: checkboxes
+    id: evidence
+    attributes:
+      label: Evidencia
+      options:
+        - label: He enlazado documentación oficial o pruebas reproducibles.
+          required: true

@@ -4,7 +4,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 RUNTIME_DIR="${SCRIPT_DIR}/runtime"
-TEMPLATE_PATH="${SCRIPT_DIR}/save-sync.yml.template"
+TEMPLATE_PATH=""
 RUNTIME_ROUTE=""
 PREVIOUS_ROUTE=""
 COMPOSE_PROJECT=""
@@ -123,8 +123,6 @@ command -v curl >/dev/null
 docker compose version >/dev/null
 
 [[ -f "${PROJECT_DIR}/.env" ]] || { log "Falta ${PROJECT_DIR}/.env; parte de .env.example."; exit 1; }
-[[ -f "${TEMPLATE_PATH}" ]] || { log "Falta la plantilla Traefik."; exit 1; }
-
 env_value() {
   python3 - "${PROJECT_DIR}/.env" "$1" <<'PY'
 import pathlib
@@ -147,13 +145,21 @@ PY
 TRAEFIK_DYNAMIC_DIR="${SAVE_SYNC_TRAEFIK_DYNAMIC_DIR:-$(env_value SAVE_SYNC_TRAEFIK_DYNAMIC_DIR)}"
 PUBLIC_BASE_URL="${SAVE_SYNC_PUBLIC_BASE_URL:-$(env_value SAVE_SYNC_PUBLIC_BASE_URL)}"
 GAME_KEY="${SAVE_SYNC_GAME_KEY:-$(env_value SAVE_SYNC_GAME_KEY)}"
+PANEL_MODE="${SAVE_SYNC_PANEL_MODE:-$(env_value SAVE_SYNC_PANEL_MODE)}"
 [[ "${GAME_KEY}" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || { log "SAVE_SYNC_GAME_KEY no es válido."; exit 1; }
+case "${PANEL_MODE}" in
+  authentik) TEMPLATE_PATH="${SCRIPT_DIR}/save-sync.yml.template" ;;
+  disabled) TEMPLATE_PATH="${SCRIPT_DIR}/save-sync-api-only.yml.template" ;;
+  *) log "SAVE_SYNC_PANEL_MODE debe ser authentik o disabled."; exit 1 ;;
+esac
+[[ -f "${TEMPLATE_PATH}" ]] || { log "Falta la plantilla Traefik."; exit 1; }
 [[ -n "${TRAEFIK_DYNAMIC_DIR}" ]] || { log "Falta SAVE_SYNC_TRAEFIK_DYNAMIC_DIR."; exit 1; }
 [[ -n "${PUBLIC_BASE_URL}" ]] || { log "Falta SAVE_SYNC_PUBLIC_BASE_URL."; exit 1; }
 GAME_CONFIG_PATH="${PROJECT_DIR}/config/games/${GAME_KEY}.json"
 [[ -f "${GAME_CONFIG_PATH}" ]] || { log "Falta ${GAME_CONFIG_PATH}."; exit 1; }
 COMPOSE_PROJECT="${SAVE_SYNC_COMPOSE_PROJECT:-save-sync-${GAME_KEY}}"
 CONTAINER_NAME="save_sync_${GAME_KEY}"
+export SAVE_SYNC_CONTAINER_NAME="${CONTAINER_NAME}"
 RUNTIME_ROUTE="${RUNTIME_DIR}/save-sync-${GAME_KEY}.yml"
 PREVIOUS_ROUTE="${RUNTIME_DIR}/save-sync-${GAME_KEY}.previous.yml"
 TRAEFIK_ROUTE="${TRAEFIK_DYNAMIC_DIR}/save-sync-${GAME_KEY}.yml"
@@ -209,7 +215,7 @@ mv -f -- "${route_tmp}" "${TRAEFIK_ROUTE}"
 route_published=1
 
 sleep 2
-SAVE_SYNC_PUBLIC_BASE_URL="${PUBLIC_BASE_URL}" SAVE_SYNC_GAME_KEY="${GAME_KEY}" "${SCRIPT_DIR}/verify.sh"
+SAVE_SYNC_PUBLIC_BASE_URL="${PUBLIC_BASE_URL}" SAVE_SYNC_GAME_KEY="${GAME_KEY}" SAVE_SYNC_PANEL_MODE="${PANEL_MODE}" "${SCRIPT_DIR}/verify.sh"
 route_published=0
 trap - ERR
 log "Despliegue verificado. No se ha reiniciado la aplicacion anfitriona ni Traefik."

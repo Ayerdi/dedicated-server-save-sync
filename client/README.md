@@ -83,3 +83,6 @@ Invoke-Pester -Path .\client -CI
 Debe complementarse con una prueba manual controlada en Windows/PalServer; la
 CI no puede demostrar el comportamiento de la REST ni la consistencia real del
 save del juego.
+
+El procedimiento de aceptación para dos equipos está en
+[MANUAL-ACCEPTANCE.md](MANUAL-ACCEPTANCE.md).

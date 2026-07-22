@@ -22,6 +22,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 GAME_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+SCHEMA_VERSION = 2
 
 
 def utcnow():
@@ -242,6 +243,12 @@ def create_app(config=None):
     # journal_mode=WAL puede fallar antes de que BEGIN IMMEDIATE llegue a
     # serializar la migración. El almacenamiento soportado es Linux local.
     with schema_lock(), connect() as db:
+        database_version = db.execute("PRAGMA user_version").fetchone()[0]
+        if database_version > SCHEMA_VERSION:
+            raise RuntimeError(
+                f"La base usa el esquema {database_version}, pero esta versión "
+                f"solo admite hasta {SCHEMA_VERSION}; no se realizará downgrade"
+            )
         db.executescript(SCHEMA)
         # La migración se serializa para que dos workers que arranquen a la vez
         # no intenten añadir la misma columna. Los triggers mantienen también
@@ -295,6 +302,7 @@ def create_app(config=None):
                 """,
             ):
                 db.execute(trigger_sql)
+            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             db.commit()
         except Exception:
             db.rollback()

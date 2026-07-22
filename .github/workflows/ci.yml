@@ -11,14 +11,21 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.11'
           cache: pip
-      - run: pip install -r requirements-dev.txt
+      - run: pip install --require-hashes -r requirements-dev.txt
+      - name: Verificar locks reproducibles
+        run: |
+          pip-compile --generate-hashes --strip-extras --output-file=requirements.txt requirements.in
+          pip-compile --allow-unsafe --generate-hashes --strip-extras --output-file=requirements-dev.txt requirements-dev.in
+          git diff --exit-code -- requirements.txt requirements-dev.txt
       - run: ruff check save_sync tests wsgi.py
+      - run: python scripts/check-docs.py
       - run: python -m pytest -q
+      - run: pip-audit -r requirements.txt --progress-spinner=off
       - run: docker compose config --quiet
       - run: docker build -t dedicated-server-save-sync:test .
       - run: bash scripts/check-repository.sh
@@ -26,28 +33,25 @@ jobs:
   powershell:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Instalar Pester
         shell: powershell
-        run: Install-Module Pester -MinimumVersion 5.5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+        run: Install-Module Pester -RequiredVersion 5.9.0 -Force -SkipPublisherCheck -Scope CurrentUser
       - name: Ejecutar Pester
         shell: powershell
-        run: Invoke-Pester -Path .\client -CI
+        run: Import-Module Pester -RequiredVersion 5.9.0; Invoke-Pester -Path .\client -CI
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - run: bash scripts/local-e2e.sh
 
   secrets:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
       - name: Instalar y ejecutar Gitleaks sin artefactos
-        shell: bash
-        run: |
-          archive="$RUNNER_TEMP/gitleaks.tar.gz"
-          curl --fail --silent --show-error --location \
-            --output "$archive" \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz
-          echo "9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c  $archive" \
-            | sha256sum --check --status
-          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" gitleaks
-          "$RUNNER_TEMP/gitleaks" detect --source . --redact --no-banner --verbose
+        run: bash scripts/run-gitleaks.sh

@@ -10,6 +10,12 @@ integración opcional con Traefik y Authentik, pruebas y procedimientos de
 operación. No contiene saves, credenciales, dominios reales ni configuraciones
 personales.
 
+[English summary](README.en.md) · [Índice de documentación](docs/INDEX.md)
+
+> Palworld es una marca de Pocketpair, Inc. Este proyecto comunitario no está
+> afiliado, patrocinado ni respaldado por Pocketpair. No distribuye archivos del
+> juego ni contenido de sus saves.
+
 ## El problema que resuelve
 
 Un save compartido manualmente mediante ZIP, nube o mensajería no ofrece una
@@ -57,7 +63,7 @@ flowchart LR
 
 Tecnología:
 
-- Python 3.11, Flask 3.1 y Gunicorn.
+- Python 3.11, Flask 3.1.3 y Gunicorn.
 - SQLite WAL con transacciones `BEGIN IMMEDIATE`.
 - Docker Compose.
 - Traefik y Authentik para el panel privado.
@@ -86,6 +92,13 @@ Requisitos:
 - Una red Docker compartida con Traefik.
 - Un proveedor ForwardAuth compatible con las cabeceras de Authentik.
 - HTTPS público válido.
+
+Para probar primero sin proxy ni dominio, utiliza el modo aislado descrito en
+[docs/LOCAL-DEVELOPMENT.md](docs/LOCAL-DEVELOPMENT.md) o ejecuta:
+
+```bash
+bash scripts/local-e2e.sh
+```
 
 Preparación:
 
@@ -227,9 +240,10 @@ Backend:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-pip install -r requirements-dev.txt
+pip install --require-hashes -r requirements-dev.txt
 ruff check save_sync tests wsgi.py
 python -m pytest -q
+pip-audit -r requirements.txt --progress-spinner=off
 ```
 
 Cliente, desde Windows PowerShell con Pester 5:
@@ -243,10 +257,12 @@ También debe validarse:
 ```bash
 docker compose config --quiet
 docker build -t dedicated-server-save-sync:test .
+bash scripts/local-e2e.sh
 ```
 
-La CI ejecuta lint, suite backend, build del contenedor, Pester y detección de
-secretos. Consulta [SECURITY.md](SECURITY.md) antes de publicar cambios.
+La CI ejecuta lint, cobertura mínima del 85 %, auditoría de dependencias, suite
+backend, build del contenedor, E2E aislado, Pester y detección de secretos.
+Consulta [SECURITY.md](SECURITY.md) antes de publicar cambios.
 
 ## Estado y límites
 
@@ -266,7 +282,11 @@ secretos. Consulta [SECURITY.md](SECURITY.md) antes de publicar cambios.
 - [Arquitectura e invariantes](docs/ARCHITECTURE.md)
 - [Contrato API](docs/API.md)
 - [Despliegue y operación](docs/OPERATIONS.md)
+- [Desarrollo local](docs/LOCAL-DEVELOPMENT.md)
+- [Migraciones](docs/MIGRATIONS.md)
 - [Adaptación a otros juegos](docs/ADAPTING-OTHER-GAMES.md)
+- [Releases](docs/RELEASES.md)
+- [Checklist de publicación](docs/PUBLICATION.md)
 - [Handoff para otro agente](docs/AGENT-HANDOFF.md)
 - [Seguridad](SECURITY.md)
 - [Cambios](CHANGELOG.md)

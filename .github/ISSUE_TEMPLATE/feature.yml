@@ -1,0 +1,25 @@
+name: Propuesta de mejora
+description: Propón un cambio general del motor o su operación.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema
+      description: Explica el riesgo o limitación actual, no solo la solución.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Propuesta
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Impacto en versiones, lock, identidad y recuperación
+    validations:
+      required: true

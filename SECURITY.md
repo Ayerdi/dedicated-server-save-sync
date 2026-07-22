@@ -1,5 +1,25 @@
 # Seguridad
 
+## Versiones soportadas
+
+| Versión | Soporte de seguridad |
+|---|---|
+| `2.x` | Sí, únicamente el último release |
+| `< 2.0` | No |
+
+## Reportar una vulnerabilidad
+
+No abras una incidencia pública. Utiliza el formulario **Report a
+vulnerability** de GitHub Security Advisories:
+
+<https://github.com/Ayerdi/dedicated-server-save-sync/security/advisories/new>
+
+Incluye versión, impacto, pasos mínimos y mitigaciones conocidas, pero no
+adjuntes saves, tokens ni configuraciones reales. Los mantenedores confirmarán
+la recepción y coordinarán la divulgación cuando exista una corrección. El canal
+estará disponible al habilitar Private Vulnerability Reporting antes de hacer
+público el repositorio.
+
 ## Datos que nunca deben versionarse
 
 - `.env` real;
@@ -33,7 +53,6 @@ git diff --cached
 La CI añade Gitleaks. Si se detecta un secreto real, no basta con borrarlo en un
 commit posterior: revocarlo, rotarlo y limpiar el historial antes de publicar.
 
-## Reporte
-
-Al ser un repositorio privado, comunicar vulnerabilidades directamente a su
-propietario. No abrir incidencias públicas con datos del despliegue.
+También se ejecutan `pip-audit`, cobertura, un E2E local aislado y Pester en
+Windows. Ninguna prueba automatizada sustituye el backup externo ni una prueba
+real del adaptador con el servidor del juego cerrado limpiamente.

@@ -27,6 +27,7 @@ TRAEFIK_DYNAMIC_DIR="${SAVE_SYNC_TRAEFIK_DYNAMIC_DIR:-$(env_value SAVE_SYNC_TRAE
 PREVIOUS_ROUTE="${RUNTIME_DIR}/save-sync-${GAME_KEY}.previous.yml"
 TRAEFIK_ROUTE="${TRAEFIK_DYNAMIC_DIR}/save-sync-${GAME_KEY}.yml"
 COMPOSE_PROJECT="${SAVE_SYNC_COMPOSE_PROJECT:-save-sync-${GAME_KEY}}"
+export SAVE_SYNC_CONTAINER_NAME="save_sync_${GAME_KEY}"
 
 log() {
   printf '[save-sync-rollback] %s\n' "$*"
