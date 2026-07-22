@@ -1,0 +1,8 @@
+{
+  "key": "palworld",
+  "gameKey": "palworld",
+  "displayName": "Palworld",
+  "clientVersion": "1.2.0",
+  "entrypoint": "Adapter.ps1",
+  "backendConfig": "config/games/palworld.json"
+}

@@ -1,0 +1,100 @@
+# Configuracion dinamica de Traefik para Save Sync.
+# deploy.sh sustituye el marcador del secreto y publica el resultado con modo 0600.
+http:
+  middlewares:
+    save-sync-__SAVE_SYNC_GAME_KEY__-clear-untrusted-auth:
+      headers:
+        customRequestHeaders:
+          X-authentik-username: ""
+          X-authentik-groups: ""
+          X-authentik-entitlements: ""
+          X-authentik-email: ""
+          X-authentik-name: ""
+          X-authentik-uid: ""
+          X-authentik-jwt: ""
+          X-Save-Sync-Proxy-Secret: ""
+
+    save-sync-__SAVE_SYNC_GAME_KEY__-forwardauth:
+      forwardAuth:
+        address: "__SAVE_SYNC_AUTHENTIK_FORWARD_AUTH_URL__"
+        trustForwardHeader: false
+        authResponseHeaders:
+          - X-authentik-username
+          - X-authentik-groups
+          - X-authentik-entitlements
+          - X-authentik-email
+          - X-authentik-name
+          - X-authentik-uid
+          - X-authentik-jwt
+
+    # Debe ejecutarse despues de ForwardAuth para que el secreto llegue solamente
+    # al backend y nunca a Authentik.
+    save-sync-__SAVE_SYNC_GAME_KEY__-inject-proxy-secret:
+      headers:
+        customRequestHeaders:
+          X-Save-Sync-Proxy-Secret: "__SAVE_SYNC_PROXY_SECRET__"
+
+    save-sync-__SAVE_SYNC_GAME_KEY__-security-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        frameDeny: true
+        customFrameOptionsValue: "DENY"
+        referrerPolicy: "no-referrer"
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+        customResponseHeaders:
+          Cache-Control: "private, no-store"
+          Permissions-Policy: "camera=(), microphone=(), geolocation=()"
+
+    save-sync-__SAVE_SYNC_GAME_KEY__-api-rate-limit:
+      rateLimit:
+        average: 120
+        period: 1m
+        burst: 30
+
+    save-sync-__SAVE_SYNC_GAME_KEY__-panel-rate-limit:
+      rateLimit:
+        average: 60
+        period: 1m
+        burst: 20
+
+  routers:
+    save-sync-__SAVE_SYNC_GAME_KEY__-api:
+      rule: "Host(`__SAVE_SYNC_PUBLIC_HOST__`) && (Path(`/api/games/__SAVE_SYNC_GAME_KEY__`) || PathPrefix(`/api/games/__SAVE_SYNC_GAME_KEY__/`))"
+      priority: 2200
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: myresolver
+      middlewares:
+        - save-sync-__SAVE_SYNC_GAME_KEY__-clear-untrusted-auth
+        - save-sync-__SAVE_SYNC_GAME_KEY__-security-headers
+        - save-sync-__SAVE_SYNC_GAME_KEY__-api-rate-limit
+      service: save-sync-__SAVE_SYNC_GAME_KEY__-backend
+
+    save-sync-__SAVE_SYNC_GAME_KEY__-panel:
+      rule: "Host(`__SAVE_SYNC_PUBLIC_HOST__`) && (Path(`/games/__SAVE_SYNC_GAME_KEY__`) || PathPrefix(`/games/__SAVE_SYNC_GAME_KEY__/`))"
+      priority: 2100
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: myresolver
+      middlewares:
+        - save-sync-__SAVE_SYNC_GAME_KEY__-clear-untrusted-auth
+        - save-sync-__SAVE_SYNC_GAME_KEY__-forwardauth
+        - save-sync-__SAVE_SYNC_GAME_KEY__-inject-proxy-secret
+        - save-sync-__SAVE_SYNC_GAME_KEY__-security-headers
+        - save-sync-__SAVE_SYNC_GAME_KEY__-panel-rate-limit
+      service: save-sync-__SAVE_SYNC_GAME_KEY__-backend
+
+  services:
+    save-sync-__SAVE_SYNC_GAME_KEY__-backend:
+      loadBalancer:
+        servers:
+          - url: "http://save-sync-__SAVE_SYNC_GAME_KEY__:8080"
+        healthCheck:
+          path: /healthz
+          interval: 10s
+          timeout: 3s

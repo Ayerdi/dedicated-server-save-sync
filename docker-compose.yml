@@ -1,0 +1,32 @@
+services:
+  dedicated-server-save-sync:
+    container_name: save_sync_${SAVE_SYNC_GAME_KEY:-palworld}
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ${SAVE_SYNC_HOST_STORAGE_PATH:-./data}:/data/save-sync
+      - ./config/games/${SAVE_SYNC_GAME_KEY:-palworld}.json:/app/game.json:ro
+    networks:
+      traefik_proxy:
+        aliases:
+          - save-sync-${SAVE_SYNC_GAME_KEY:-palworld}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+
+networks:
+  traefik_proxy:
+    external: true
+    name: ${SAVE_SYNC_PROXY_NETWORK:-traefik_proxy}

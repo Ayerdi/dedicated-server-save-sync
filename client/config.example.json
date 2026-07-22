@@ -1,0 +1,26 @@
+{
+  "Adapter": "palworld",
+  "GameKey": "palworld",
+  "PlayerName": "Host A",
+  "ClientId": "host-a-pc",
+  "ApiBaseUrl": "https://sync.example.com/api/games/palworld",
+  "PalServerRoot": "C:\\PalServer",
+  "PalServerExecutable": "C:\\PalServer\\PalServer.exe",
+  "SaveGamesRoot": "C:\\PalServer\\Pal\\Saved\\SaveGames",
+  "GameUserSettingsPath": "C:\\PalServer\\Pal\\Saved\\Config\\WindowsServer\\GameUserSettings.ini",
+  "InitialWorldGuid": "",
+  "RestApiBaseUrl": "http://127.0.0.1:8212/v1/api",
+  "RestUsername": "admin",
+  "ServerArguments": [
+    "-useperfthreads",
+    "-NoAsyncLoadingThread",
+    "-UseMultithreadForDS"
+  ],
+  "HeartbeatSeconds": 60,
+  "RestStartupTimeoutSeconds": 180,
+  "SaveGraceSeconds": 10,
+  "ShutdownWaitSeconds": 10,
+  "ShutdownTimeoutSeconds": 120,
+  "LocalBackupRetention": 5,
+  "ExcludeInternalBackups": true
+}

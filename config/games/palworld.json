@@ -1,0 +1,9 @@
+{
+  "key": "palworld",
+  "displayName": "Palworld",
+  "identityField": "worldGuid",
+  "identityLabel": "World GUID",
+  "identityPattern": "^[A-F0-9]{32}$",
+  "identityNormalization": "uppercase",
+  "legacyPalworldRoutes": true
+}

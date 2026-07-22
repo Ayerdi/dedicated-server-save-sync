@@ -1,0 +1,17 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+data/
+config/runtime/
+client/config.json
+client/data/
+*.zip
+*.sav
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.log
+PalWorldSettings.ini
+GameUserSettings.ini

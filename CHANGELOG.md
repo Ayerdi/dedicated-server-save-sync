@@ -1,0 +1,31 @@
+# Cambios
+
+## 2.0.0
+
+- Convierte el backend en motor de una instancia por `gameKey`.
+- Añade rutas canónicas `/api/games/{gameKey}` y cabeceras `X-Save-Sync-*`.
+- Generaliza `world_guid` como `save_identity` configurable por adaptador.
+- Mantiene alias HTTP y campos Palworld para compatibilidad.
+- Separa `SyncGame.ps1` de `client/adapters/palworld`.
+- Aísla contenedor, almacenamiento, base y configuración Traefik por juego.
+- Añade pruebas con un segundo contrato ficticio basado en `campaignId`.
+
+## 1.2.0
+
+- Unifica los clientes Windows en una única base configurable.
+- Incorpora la selección preferente del GUID remoto de la corrección 1.1.
+- Añade versión de cliente al manifest ZIP.
+- Añade modo `LibraryOnly` y pruebas Pester aisladas.
+- Parametriza dominio, red, ForwardAuth, almacenamiento e identidades.
+- Sustituye datos del despliegue original por ejemplos neutros.
+- Añade documentación para despliegue, operación y otros juegos.
+
+## 1.1.0
+
+- Corrige la ambigüedad cuando el equipo contiene varios mundos locales y la
+  autoridad remota ya identifica cuál debe usarse.
+
+## 1.0.0
+
+- Primera implementación operativa de backend, lock, versiones, `worldGuid`,
+  cliente PowerShell y publicación atómica.
