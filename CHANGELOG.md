@@ -1,5 +1,11 @@
 # Cambios
 
+## 2.1.0
+
+- Añade `SAVE_SYNC_RETENTION_PER_SLOT` para conservar N versiones por slot.
+- Añade `SAVE_SYNC_POST_PUBLISH_COMMAND` para lanzar un backup externo tras
+  cada publicación confirmada.
+
 ## 2.0.0
 
 - Adopta Apache License 2.0 para código y documentación.

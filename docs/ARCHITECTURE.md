@@ -91,6 +91,12 @@ existe un endpoint normal para cambiar de partida.
 ## Retención
 
 Cada usuario se asocia a un `slot` mediante
-`SAVE_SYNC_USER_IDENTITIES_JSON`. Se conserva la última versión física de cada
-slot. Los alias del mismo anfitrión deben compartir slot. La versión vigente
-nunca se elimina durante una publicación fallida.
+`SAVE_SYNC_USER_IDENTITIES_JSON`. Se conservan las últimas
+`SAVE_SYNC_RETENTION_PER_SLOT` versiones físicas de cada slot. Los alias del
+mismo anfitrión deben compartir slot. La versión vigente nunca se elimina
+durante una publicación fallida.
+
+Tras confirmar una publicación se puede lanzar un comando externo de backup
+(`SAVE_SYNC_POST_PUBLISH_COMMAND`) que recibe la versión, la ruta y la
+identidad publicada. El hook es asíncrono y nunca compromete la versión
+confirmada.

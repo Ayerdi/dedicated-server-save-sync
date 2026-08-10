@@ -1,6 +1,7 @@
 import hashlib
 import io
 import sqlite3
+import subprocess
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
@@ -320,6 +321,74 @@ def test_protection_operation_and_button_are_removed(app):
     assert endpoint.status_code == 404
     assert "/protect" not in panel.get_data(as_text=True)
     assert "Proteger" not in panel.get_data(as_text=True)
+
+
+def test_retention_per_slot_keeps_configured_number_of_versions(tmp_path):
+    storage = tmp_path / "storage3"
+    application = create_app(
+        {
+            "TESTING": True,
+            "SAVE_SYNC_STORAGE_PATH": str(storage),
+            "SAVE_SYNC_DB_PATH": str(storage / "palworld.sqlite3"),
+            "SAVE_SYNC_REQUIRE_HTTPS": False,
+            "SAVE_SYNC_PROXY_SECRET": "proxy-test-secret",
+            "SAVE_SYNC_CSRF_SECRET": "csrf-test-secret",
+            "SAVE_SYNC_LOCK_TTL_SECONDS": 300,
+            "SAVE_SYNC_RATE_LIMIT_PER_MINUTE": 10000,
+            "SAVE_SYNC_RETENTION_PER_SLOT": 3,
+            "SAVE_SYNC_WEB_USERS": "admin:admin,player:player",
+            "SAVE_SYNC_USER_IDENTITIES_JSON": (
+                '{"admin":{"displayName":"Host A","slot":"host-a"},'
+                '"player":{"displayName":"Host B","slot":"host-b"}}'
+            ),
+        }
+    )
+    with application.extensions["save_sync_connect"]() as db:
+        users = db.execute("SELECT id,username FROM users").fetchall()
+        for user in users:
+            token = f"token-{user['username']}"
+            db.execute(
+                "INSERT INTO api_tokens(user_id,name,token_hash,created_at) VALUES(?,?,?,?)",
+                (user["id"], "test", digest(token), iso(utcnow())),
+            )
+    for number in range(1, 7):
+        publish(application, f"a{number}".encode(), "admin")
+        publish(application, f"p{number}".encode(), "player")
+    with application.extensions["save_sync_connect"]() as db:
+        versions = [
+            row[0]
+            for row in db.execute("SELECT version FROM versions ORDER BY version")
+        ]
+    assert versions == [7, 8, 9, 10, 11, 12]
+    backups = storage / "backups"
+    assert len(list(backups.glob("save-v*.zip"))) == 6
+
+
+def test_post_publish_hook_runs_and_never_blocks_publication(app, monkeypatch, tmp_path):
+    hook_calls = []
+
+    def record_hook(command, **kwargs):
+        hook_calls.append((command, kwargs.get("env", {})))
+
+    monkeypatch.setattr(subprocess, "Popen", record_hook)
+    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = "restic backup /data/save-sync"
+    result = publish(app, b"hook-check")
+    assert result["version"] == 1
+    assert len(hook_calls) == 1
+    assert hook_calls[0][0] == ["restic", "backup", "/data/save-sync"]
+    env = hook_calls[0][1]
+    assert env["SAVE_SYNC_PUBLISHED_VERSION"] == "1"
+    assert env["SAVE_SYNC_PUBLISHED_IDENTITY"] == WORLD_GUID
+
+    def failing_hook(command, **kwargs):
+        raise OSError("injected hook failure")
+
+    monkeypatch.setattr(subprocess, "Popen", failing_hook)
+    result = publish(app, b"hook-fail")
+    assert result["version"] == 2
+    with app.test_client() as client:
+        downloaded = client.get("/api/games/palworld/download", headers=headers())
+    assert downloaded.status_code == 200
 
 
 def test_canonical_cleanup_failure_does_not_invalidate_published_save(app, monkeypatch):

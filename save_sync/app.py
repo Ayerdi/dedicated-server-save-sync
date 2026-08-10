@@ -6,8 +6,10 @@ import json
 import os
 import re
 import secrets
+import shlex
 import sqlite3
 import stat
+import subprocess
 import tempfile
 import time
 import zipfile
@@ -105,6 +107,8 @@ DEFAULTS = {
     ),
     "SAVE_SYNC_REQUIRE_HTTPS": True,
     "SAVE_SYNC_PROXY_SECRET": "",
+    "SAVE_SYNC_RETENTION_PER_SLOT": 1,
+    "SAVE_SYNC_POST_PUBLISH_COMMAND": "",
 }
 
 
@@ -133,6 +137,8 @@ def create_app(config=None):
         else:
             app.config[key] = raw
     app.config.update(config or {})
+    if int(app.config["SAVE_SYNC_RETENTION_PER_SLOT"]) < 1:
+        raise RuntimeError("SAVE_SYNC_RETENTION_PER_SLOT debe ser >= 1")
     game = dict(DEFAULT_GAME)
     game_config_path = str(app.config.get("SAVE_SYNC_GAME_CONFIG_PATH", "")).strip()
     if game_config_path:
@@ -366,22 +372,25 @@ def create_app(config=None):
             {"displayName": username, "slot": username.casefold()},
         )
 
+    retention_per_slot = int(app.config["SAVE_SYNC_RETENTION_PER_SLOT"])
+
     def cleanup_canonical_versions():
-        """Conserva únicamente la última versión de cada slot configurado."""
+        """Conserva las últimas N versiones de cada slot configurado."""
         with transaction(immediate=True) as db:
             rows = db.execute(
                 "SELECT v.version,v.path,u.username FROM versions v "
                 "JOIN users u ON u.id=v.updated_by ORDER BY v.version DESC"
             ).fetchall()
-            kept_slots = set()
+            kept_per_slot = {}
             for row in rows:
                 slot = identity_for_username(row["username"])["slot"]
-                if slot in kept_slots:
+                kept = kept_per_slot.get(slot, 0)
+                if kept >= retention_per_slot:
                     db.execute(
                         "DELETE FROM versions WHERE version=?", (row["version"],)
                     )
                 else:
-                    kept_slots.add(slot)
+                    kept_per_slot[slot] = kept + 1
             referenced = {
                 storage / row["path"]
                 for row in db.execute("SELECT path FROM versions").fetchall()
@@ -400,6 +409,35 @@ def create_app(config=None):
 
     # Recupera limpiezas interrumpidas y huérfanos de intentos anteriores.
     cleanup_canonical_versions()
+
+    def run_post_publish_hook(version, relative_path, save_identity):
+        """Ejecuta el comando externo de backup; nunca invalida la publicación."""
+        command = str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip()
+        if not command:
+            return
+        env = os.environ.copy()
+        env.update(
+            {
+                "SAVE_SYNC_PUBLISHED_VERSION": str(version),
+                "SAVE_SYNC_PUBLISHED_PATH": str(storage / relative_path),
+                "SAVE_SYNC_PUBLISHED_IDENTITY": save_identity,
+            }
+        )
+        try:
+            subprocess.Popen(
+                shlex.split(command),
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+            )
+        except OSError:
+            app.logger.exception(
+                "No se pudo lanzar el hook post-publicación; la versión %s se conserva",
+                version,
+            )
 
     def audit(db, event, user=None, success=True, client_id=None, **details):
         db.execute(
@@ -1145,6 +1183,7 @@ def create_app(config=None):
                 app.logger.exception(
                     "La limpieza post-publicación falló; la versión confirmada se conserva"
                 )
+            run_post_publish_hook(new_version, relative, save_identity)
             result = dict(
                 ok=True,
                 previousVersion=base,
@@ -1403,6 +1442,7 @@ def create_app(config=None):
             app.logger.exception(
                 "La limpieza posterior a restauración falló; la versión confirmada se conserva"
             )
+        run_post_publish_hook(new_version, relative, source["save_identity"])
         result = dict(
             ok=True,
             version=new_version,

@@ -56,23 +56,27 @@ ser una operación administrativa diseñada y probada, no una copia de SQLite.
 | `SAVE_SYNC_HEARTBEAT_INTERVAL_SECONDS` | Intervalo recomendado, 60 |
 | `SAVE_SYNC_PROXY_SECRET` | Cabecera interna proxy/backend |
 | `SAVE_SYNC_CSRF_SECRET` | Firma CSRF del panel |
+| `SAVE_SYNC_RETENTION_PER_SLOT` | Versiones conservadas por slot (por defecto 1) |
+| `SAVE_SYNC_POST_PUBLISH_COMMAND` | Comando externo de backup tras publicar |
 
 Los dos últimos valores deben ser independientes, aleatorios y tener al menos
 32 caracteres. No deben aparecer en Traefik estático, logs o Git.
 
-## Retención y desviación deliberada
+## Retención y backup externo
 
-El requisito operativo de este despliegue es conservar como máximo el último
-ZIP de cada anfitrión. `SAVE_SYNC_USER_IDENTITIES_JSON` asigna cada usuario o
-alias a un `slot`; la limpieza posterior a un upload o restore conserva una
-sola versión por slot. Con `host-a` y `host-b`, el máximo normal son dos ZIP.
+Cada usuario se asocia a un `slot` mediante
+`SAVE_SYNC_USER_IDENTITIES_JSON`. `SAVE_SYNC_RETENTION_PER_SLOT` controla
+cuántas versiones recientes se conservan por slot (por defecto 1). Con dos
+slots y retención 1, el máximo normal son dos ZIP; con retención 5, hasta
+diez. El límite de espacio sigue siendo deliberado y configurable.
 
-Por ese motivo esta versión no implementa backups `protected` ni garantiza
-conservar siempre la versión inmediatamente anterior: cualquiera de esas dos
-reglas permitiría superar el máximo. Las filas y archivos antiguos se eliminan
-solo después de confirmar una publicación válida. Si se necesita retención de
-largo plazo, debe realizarse con un backup externo coherente del volumen y de
-SQLite.
+Tras cada publicación confirmada se ejecuta
+`SAVE_SYNC_POST_PUBLISH_COMMAND` con las variables de entorno
+`SAVE_SYNC_PUBLISHED_VERSION`, `SAVE_SYNC_PUBLISHED_PATH` y
+`SAVE_SYNC_PUBLISHED_IDENTITY`. El comando se lanza en segundo plano, sin
+bloquear la respuesta al cliente, y un fallo en el hook nunca invalida la
+versión publicada. Está pensado para invocar un backup externo coherente del
+volumen (por ejemplo `restic backup /data/save-sync`).
 
 ## Despliegue
 
