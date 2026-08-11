@@ -1,5 +1,16 @@
 # Cambios
 
+## 2.1.1
+
+- Garantiza que cualquier fallo del hook `SAVE_SYNC_POST_PUBLISH_COMMAND`
+  (incluidas `ValueError` de `shlex.split`) no invalida una publicación
+  confirmada.
+- Protege las versiones con backup en curso mediante una tabla
+  `pending_backups`: la limpieza de retención no borra el ZIP mientras el
+  proceso de backup asíncrono lo necesita.
+- Registra en auditoría (`backup_hook_completed`/`backup_hook_failed`) el
+  exit code real del backup externo.
+
 ## 2.1.0
 
 - Añade `SAVE_SYNC_RETENTION_PER_SLOT` para conservar N versiones por slot.
