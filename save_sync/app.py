@@ -11,6 +11,7 @@ import sqlite3
 import stat
 import subprocess
 import tempfile
+import threading
 import time
 import zipfile
 from contextlib import contextmanager
@@ -83,7 +84,11 @@ CREATE TABLE IF NOT EXISTS audit (
  client_id TEXT, details TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS rate_limits (
- identity TEXT NOT NULL, window INTEGER NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(identity, window)
+  identity TEXT NOT NULL, window INTEGER NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(identity, window)
+);
+CREATE TABLE IF NOT EXISTS pending_backups (
+  version INTEGER PRIMARY KEY REFERENCES versions(version),
+  started_at TEXT NOT NULL
 );
 """
 
@@ -381,11 +386,14 @@ def create_app(config=None):
                 "SELECT v.version,v.path,u.username FROM versions v "
                 "JOIN users u ON u.id=v.updated_by ORDER BY v.version DESC"
             ).fetchall()
+            pending_backups = {
+                row[0] for row in db.execute("SELECT version FROM pending_backups")
+            }
             kept_per_slot = {}
             for row in rows:
                 slot = identity_for_username(row["username"])["slot"]
                 kept = kept_per_slot.get(slot, 0)
-                if kept >= retention_per_slot:
+                if kept >= retention_per_slot and row["version"] not in pending_backups:
                     db.execute(
                         "DELETE FROM versions WHERE version=?", (row["version"],)
                     )
@@ -408,10 +416,12 @@ def create_app(config=None):
                     app.logger.exception("No se pudo eliminar ZIP obsoleto %s", path)
 
     # Recupera limpiezas interrumpidas y huérfanos de intentos anteriores.
+    with transaction(immediate=True) as db:
+        db.execute("DELETE FROM pending_backups")
     cleanup_canonical_versions()
 
     def run_post_publish_hook(version, relative_path, save_identity):
-        """Ejecuta el comando externo de backup; nunca invalida la publicación."""
+        """Ejecuta el backup externo; nunca invalida la publicación."""
         command = str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip()
         if not command:
             return
@@ -424,8 +434,16 @@ def create_app(config=None):
             }
         )
         try:
-            subprocess.Popen(
-                shlex.split(command),
+            argv = shlex.split(command)
+            if not argv:
+                return
+            with transaction(immediate=True) as db:
+                db.execute(
+                    "INSERT OR REPLACE INTO pending_backups(version,started_at) VALUES(?,?)",
+                    (version, iso(utcnow())),
+                )
+            process = subprocess.Popen(
+                argv,
                 env=env,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
@@ -433,11 +451,41 @@ def create_app(config=None):
                 start_new_session=True,
                 close_fds=True,
             )
-        except OSError:
+        except Exception:
             app.logger.exception(
-                "No se pudo lanzar el hook post-publicación; la versión %s se conserva",
+                "Falló el hook post-publicación; la versión %s permanece publicada",
                 version,
             )
+            return
+
+        def await_backup_result():
+            exit_code = process.wait()
+            try:
+                with transaction(immediate=True) as db:
+                    db.execute(
+                        "DELETE FROM pending_backups WHERE version=?", (version,)
+                    )
+                    audit(
+                        db,
+                        "backup_hook_completed" if exit_code == 0 else "backup_hook_failed",
+                        None,
+                        exit_code == 0,
+                        version=version,
+                        exitCode=exit_code,
+                    )
+            except Exception:
+                app.logger.exception(
+                    "No se pudo registrar el resultado del backup de la versión %s",
+                    version,
+                )
+            if exit_code != 0:
+                app.logger.warning(
+                    "El backup externo de la versión %s terminó con exit code %s",
+                    version,
+                    exit_code,
+                )
+
+        threading.Thread(target=await_backup_result, daemon=True).start()
 
     def audit(db, event, user=None, success=True, client_id=None, **details):
         db.execute(

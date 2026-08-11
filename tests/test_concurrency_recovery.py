@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import sqlite3
 import subprocess
 import zipfile
@@ -364,11 +365,16 @@ def test_retention_per_slot_keeps_configured_number_of_versions(tmp_path):
     assert len(list(backups.glob("save-v*.zip"))) == 6
 
 
-def test_post_publish_hook_runs_and_never_blocks_publication(app, monkeypatch, tmp_path):
+def test_post_publish_hook_runs_and_never_blocks_publication(app, monkeypatch):
     hook_calls = []
+
+    class FakeProcess:
+        def wait(self):
+            return 0
 
     def record_hook(command, **kwargs):
         hook_calls.append((command, kwargs.get("env", {})))
+        return FakeProcess()
 
     monkeypatch.setattr(subprocess, "Popen", record_hook)
     app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = "restic backup /data/save-sync"
@@ -389,6 +395,74 @@ def test_post_publish_hook_runs_and_never_blocks_publication(app, monkeypatch, t
     with app.test_client() as client:
         downloaded = client.get("/api/games/palworld/download", headers=headers())
     assert downloaded.status_code == 200
+
+
+def test_post_publish_hook_with_malformed_quotes_still_returns_201(app):
+    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = 'restic backup "mal cerrado'
+    result = publish(app, b"malformed")
+    assert result["version"] == 1
+    with app.test_client() as client:
+        downloaded = client.get("/api/games/palworld/download", headers=headers())
+    assert downloaded.status_code == 200
+
+
+def test_backup_pending_version_survives_cleanup(app, monkeypatch):
+    blocker = Event()
+
+    class HangingProcess:
+        def wait(self):
+            blocker.wait(timeout=30)
+            return 0
+
+    def slow_hook(command, **kwargs):
+        return HangingProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", slow_hook)
+    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = "restic backup /data/save-sync"
+    app.config["SAVE_SYNC_RETENTION_PER_SLOT"] = 1
+
+    publish(app, b"v1", "admin")
+    publish(app, b"v2", "admin")
+    with app.extensions["save_sync_connect"]() as db:
+        pending = {
+            row[0] for row in db.execute("SELECT version FROM pending_backups")
+        }
+        versions = [
+            row[0] for row in db.execute("SELECT version FROM versions ORDER BY version")
+        ]
+    assert 1 in pending
+    assert versions == [1, 2]
+    backups = Path(app.config["SAVE_SYNC_STORAGE_PATH"], "backups")
+    assert len(list(backups.glob("save-v*.zip"))) == 2
+    blocker.set()
+
+
+def test_backup_hook_result_is_audited(app, monkeypatch):
+    class FailingProcess:
+        def wait(self):
+            return 1
+
+    def failing_hook(command, **kwargs):
+        return FailingProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", failing_hook)
+    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = "restic backup /data/save-sync"
+    publish(app, b"audit-check")
+    row = None
+    for _ in range(100):
+        with app.extensions["save_sync_connect"]() as db:
+            row = db.execute(
+                "SELECT event,success,details FROM audit WHERE event=? ORDER BY id DESC",
+                ("backup_hook_failed",),
+            ).fetchone()
+        if row:
+            break
+        Event().wait(0.05)
+    assert row is not None
+    assert row["success"] == 0
+    details = json.loads(row["details"])
+    assert details["version"] == 1
+    assert details["exitCode"] == 1
 
 
 def test_canonical_cleanup_failure_does_not_invalidate_published_save(app, monkeypatch):
