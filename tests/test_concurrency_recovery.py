@@ -482,11 +482,13 @@ def test_backup_hook_timeout_terminates_and_audits_failure(app, monkeypatch):
 
         def wait(self, timeout=None):
             self.calls += 1
-            if self.calls == 1:
+            # El proceso ignora tanto SIGTERM como SIGKILL (p. ej. un nieto
+            # zombie) para ejercer las ramas de timeout de terminate_process_group.
+            if self.calls <= 3:
                 raise subprocess.TimeoutExpired(
                     cmd=["restic"], timeout=timeout or 0
                 )
-            return -15
+            return 0
 
     captured = {}
 
@@ -513,9 +515,9 @@ def test_backup_hook_timeout_terminates_and_audits_failure(app, monkeypatch):
     details = json.loads(row["details"])
     assert details["version"] == 1
     assert details["timedOut"] == 1
-    assert details["exitCode"] == -15
     assert signal.SIGTERM in sent_signals
-    assert process.calls >= 2
+    assert signal.SIGKILL in sent_signals
+    assert process.calls >= 3
 
 
 def test_orphan_pending_backups_are_purged_by_cleanup(app):

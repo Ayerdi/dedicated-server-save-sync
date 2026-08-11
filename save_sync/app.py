@@ -53,26 +53,6 @@ def fsync_directory(path):
         os.close(descriptor)
 
 
-def _terminate_process_group(process, sigterm_timeout=10):
-    """Envia SIGTERM al grupo de proceso del hijo (start_new_session) y, si no
-    termina, SIGKILL al grupo completo. Nunca propaga errores al caller."""
-    pgid = process.pid
-    try:
-        pgid = os.getpgid(process.pid)
-    except OSError:
-        pass
-    for sig in (signal.SIGTERM, signal.SIGKILL):
-        try:
-            os.killpg(pgid, sig)
-        except (ProcessLookupError, PermissionError):
-            return
-        try:
-            process.wait(timeout=sigterm_timeout)
-            return
-        except subprocess.TimeoutExpired:
-            continue
-
-
 def error(code, message, status, details=None):
     return jsonify(error=code, message=message, details=details or {}), status
 
@@ -453,6 +433,36 @@ def create_app(config=None):
     # Recupera limpiezas interrumpidas y la tabla de backups pendientes.
     cleanup_canonical_versions()
 
+    def terminate_process_group(process, sigterm_timeout=10, sigkill_timeout=10):
+        """Envia SIGTERM al grupo de proceso del hijo (start_new_session) y, tras
+        el periodo de gracia, SIGKILL al grupo completo. process.wait() solo
+        vigila al proceso directo, por lo que un nieto que ignore SIGTERM
+        quedaría si no se mata el grupo entero. Nunca propaga errores."""
+        pgid = process.pid
+        try:
+            pgid = os.getpgid(process.pid)
+        except (ProcessLookupError, PermissionError):
+            return
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            return
+        try:
+            process.wait(timeout=sigterm_timeout)
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            return
+        try:
+            process.wait(timeout=sigkill_timeout)
+        except subprocess.TimeoutExpired:
+            app.logger.warning(
+                "El proceso de backup (pid %s) no terminó tras SIGKILL",
+                process.pid,
+            )
+
     def run_post_publish_hook(version, relative_path, save_identity):
         """Ejecuta el backup externo; nunca invalida la publicación."""
         command = str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip()
@@ -521,7 +531,7 @@ def create_app(config=None):
                 # El proceso arranca con start_new_session=True, así que su
                 # PGID es su propio PID. Se termina el grupo entero para no
                 # dejar huérfanos que sigan usando el ZIP publicado.
-                _terminate_process_group(process, sigterm_timeout=10)
+                terminate_process_group(process, sigterm_timeout=10)
                 exit_code = process.wait(timeout=5)
                 app.logger.warning(
                     "El backup externo de la versión %s superó el timeout de %ss",
