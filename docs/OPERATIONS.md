@@ -84,12 +84,11 @@ publicada. Se respeta su timeout (`SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`,
 > **Límite de resiliencia del worker:** el proceso de backup se lanza en segundo
 > plano con `start_new_session=True` y se supervisa desde un thread *daemon* del
 > worker que lo armó. Si ese worker muere (p. ej. reinicio de Gunicorn), el
-> thread desaparece y el proceso externo queda huérrfano: deja de aplicarse su
-> timeout. La tabla `pending_backups` sigue protegiendo al ZIP hasta la purga
-> stale (`started_at > ahora - timeout - 60s`) de `cleanup_canonical_versions`,
-> por lo que la retención se reabre automáticamente, pero el proceso external
-> puede seguir ejecutable mientras tanto. Para la carga prevista (un par de
-> hosts) se asume; un scheduler/queue dedicado cambiaría esta ecuación.
+> thread desaparece y el proceso externo queda huérfano: se pierde su timeout.
+> Tras `started_at < ahora - (timeout + 60s)`, otro `cleanup_canonical_versions`
+> paga el marker stale y reabre la retención, pero el proceso externo podría
+> seguir ejecutable mientras tanto. Para la carga prevista (un par de hosts) se
+> asume; un scheduler/queue dedicado cambiaría esta ecuación.
 
 La imagen incluye `restic`; configúrese `RESTIC_REPOSITORY` y
 `RESTIC_PASSWORD` (o su equivalente) como secretos del despliegue. El cache de
