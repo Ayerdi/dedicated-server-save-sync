@@ -114,6 +114,7 @@ DEFAULTS = {
     "SAVE_SYNC_PROXY_SECRET": "",
     "SAVE_SYNC_RETENTION_PER_SLOT": 1,
     "SAVE_SYNC_POST_PUBLISH_COMMAND": "",
+    "SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS": 1800,
 }
 
 
@@ -415,9 +416,17 @@ def create_app(config=None):
                     # huérfano se reintentará en el siguiente cleanup/arranque.
                     app.logger.exception("No se pudo eliminar ZIP obsoleto %s", path)
 
-    # Recupera limpiezas interrumpidas y huérfanos de intentos anteriores.
+    # Recupera limpiezas interrumpidas y la tabla de backups pendientes. Los
+    # backups cuyo proceso desapareció (worker reemplazado) se marcan como
+    # huérfanos en lugar de borrarse globalmente, para no invalidar los de un
+    # worker colega que sigue vivo. El propio thread de backup limpia su fila al
+    # terminar.
+    backup_timeout = int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"])
+    stale_before = iso(utcnow() - timedelta(seconds=backup_timeout + 60))
     with transaction(immediate=True) as db:
-        db.execute("DELETE FROM pending_backups")
+        db.execute(
+            "DELETE FROM pending_backups WHERE started_at < ?", (stale_before,)
+        )
     cleanup_canonical_versions()
 
     def run_post_publish_hook(version, relative_path, save_identity):
@@ -431,6 +440,7 @@ def create_app(config=None):
                 "SAVE_SYNC_PUBLISHED_VERSION": str(version),
                 "SAVE_SYNC_PUBLISHED_PATH": str(storage / relative_path),
                 "SAVE_SYNC_PUBLISHED_IDENTITY": save_identity,
+                "SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS": str(backup_timeout),
             }
         )
         try:
@@ -452,14 +462,51 @@ def create_app(config=None):
                 close_fds=True,
             )
         except Exception:
+            # Popen() falló: no hay proceso que espere, así que la fila pendiente
+            # no es necesaria y debe limpiarse inmediatamente o la retención
+            # bloquearía esta versión para siempre.
             app.logger.exception(
                 "Falló el hook post-publicación; la versión %s permanece publicada",
                 version,
             )
+            try:
+                with transaction(immediate=True) as db:
+                    db.execute(
+                        "DELETE FROM pending_backups WHERE version=?", (version,)
+                    )
+            except Exception:
+                app.logger.exception(
+                    "No se pudo limpiar pending_backups tras fallo del hook"
+                )
+            try:
+                cleanup_canonical_versions()
+            except Exception:
+                app.logger.exception(
+                    "La limpieza post-fallo-del-hook falló; la versión %s se conserva",
+                    version,
+                )
             return
 
         def await_backup_result():
-            exit_code = process.wait()
+            exit_code = 0
+            timed_out = False
+            try:
+                exit_code = process.wait(timeout=backup_timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                try:
+                    process.terminate()
+                    process.wait(timeout=10)
+                except Exception:
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+                app.logger.warning(
+                    "El backup externo de la versión %s superó el timeout de %ss",
+                    version,
+                    backup_timeout,
+                )
             try:
                 with transaction(immediate=True) as db:
                     db.execute(
@@ -467,22 +514,33 @@ def create_app(config=None):
                     )
                     audit(
                         db,
-                        "backup_hook_completed" if exit_code == 0 else "backup_hook_failed",
+                        "backup_hook_completed"
+                        if exit_code == 0 and not timed_out
+                        else "backup_hook_failed",
                         None,
-                        exit_code == 0,
+                        exit_code == 0 and not timed_out,
                         version=version,
                         exitCode=exit_code,
+                        timedOut=1 if timed_out else 0,
                     )
             except Exception:
                 app.logger.exception(
                     "No se pudo registrar el resultado del backup de la versión %s",
                     version,
                 )
-            if exit_code != 0:
+            try:
+                cleanup_canonical_versions()
+            except Exception:
+                app.logger.exception(
+                    "La limpieza post-backup falló; la versión %s se conserva",
+                    version,
+                )
+            if exit_code != 0 or timed_out:
                 app.logger.warning(
-                    "El backup externo de la versión %s terminó con exit code %s",
+                    "El backup externo de la versión %s terminó con exit code %s%s",
                     version,
                     exit_code,
+                    " (timeout)" if timed_out else "",
                 )
 
         threading.Thread(target=await_backup_result, daemon=True).start()

@@ -369,7 +369,7 @@ def test_post_publish_hook_runs_and_never_blocks_publication(app, monkeypatch):
     hook_calls = []
 
     class FakeProcess:
-        def wait(self):
+        def wait(self, timeout=None):
             return 0
 
     def record_hook(command, **kwargs):
@@ -410,7 +410,7 @@ def test_backup_pending_version_survives_cleanup(app, monkeypatch):
     blocker = Event()
 
     class HangingProcess:
-        def wait(self):
+        def wait(self, timeout=None):
             blocker.wait(timeout=30)
             return 0
 
@@ -439,7 +439,7 @@ def test_backup_pending_version_survives_cleanup(app, monkeypatch):
 
 def test_backup_hook_result_is_audited(app, monkeypatch):
     class FailingProcess:
-        def wait(self):
+        def wait(self, timeout=None):
             return 1
 
     def failing_hook(command, **kwargs):
@@ -463,6 +463,106 @@ def test_backup_hook_result_is_audited(app, monkeypatch):
     details = json.loads(row["details"])
     assert details["version"] == 1
     assert details["exitCode"] == 1
+
+
+def test_backup_hook_timeout_terminates_and_audits_failure(app, monkeypatch):
+    class HangingProcess:
+        def __init__(self):
+            self.terminated = False
+            self.killed = False
+
+        def wait(self, timeout=None):
+            raise subprocess.TimeoutExpired(cmd=["restic"], timeout=timeout or 0)
+
+        def terminate(self):
+            self.terminated = True
+
+        def kill(self):
+            self.killed = True
+
+    captured = {}
+
+    def hanging_hook(command, **kwargs):
+        captured["process"] = HangingProcess()
+        return captured["process"]
+
+    monkeypatch.setattr(subprocess, "Popen", hanging_hook)
+    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = "restic backup /data/save-sync"
+    publish(app, b"timeout")
+    process = captured["process"]
+    row = None
+    for _ in range(100):
+        with app.extensions["save_sync_connect"]() as db:
+            row = db.execute(
+                "SELECT success,details FROM audit WHERE event=? ORDER BY id DESC",
+                ("backup_hook_failed",),
+            ).fetchone()
+        if row:
+            break
+        Event().wait(0.05)
+    assert row is not None
+    details = json.loads(row["details"])
+    assert details["version"] == 1
+    assert details["timedOut"] == 1
+    assert process.terminated is True
+    assert process.killed is True
+
+
+def test_post_publish_hook_popen_failure_clears_pending_backups(app, monkeypatch):
+    def raise_popen(*args, **kwargs):
+        raise OSError("simulated restic not found")
+
+    monkeypatch.setattr(subprocess, "Popen", raise_popen)
+    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = "restic backup /data/save-sync"
+    app.config["SAVE_SYNC_RETENTION_PER_SLOT"] = 1
+    result = publish(app, b"no-restic")
+    assert result["version"] == 1
+    with app.extensions["save_sync_connect"]() as db:
+        pending = [
+            row[0] for row in db.execute("SELECT version FROM pending_backups")
+        ]
+        versions = [
+            row[0] for row in db.execute("SELECT version FROM versions ORDER BY version")
+        ]
+    assert pending == []
+    assert versions == [1]
+
+
+def test_cleanup_runs_after_backup_completes(app, monkeypatch):
+    completed = Event()
+
+    class SlowProcess:
+        def wait(self, timeout=None):
+            completed.wait(timeout=30)
+            return 0
+
+    def slow_hook(command, **kwargs):
+        return SlowProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", slow_hook)
+    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = "restic backup /data/save-sync"
+    app.config["SAVE_SYNC_RETENTION_PER_SLOT"] = 1
+    publish(app, b"v1", "admin")
+    publish(app, b"v2", "admin")
+    with app.extensions["save_sync_connect"]() as db:
+        versions = [
+            row[0] for row in db.execute("SELECT version FROM versions ORDER BY version")
+        ]
+    assert versions == [1, 2]
+    completed.set()
+    for _ in range(100):
+        with app.extensions["save_sync_connect"]() as db:
+            pending = [
+                row[0] for row in db.execute("SELECT version FROM pending_backups")
+            ]
+            versions = [
+                row[0] for row in db.execute("SELECT version FROM versions ORDER BY version")
+            ]
+        if pending == [] and versions == [2]:
+            break
+        Event().wait(0.05)
+    assert pending == []
+    assert versions == [2]
 
 
 def test_canonical_cleanup_failure_does_not_invalidate_published_save(app, monkeypatch):

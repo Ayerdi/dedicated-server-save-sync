@@ -9,9 +9,15 @@ WORKDIR /app
 RUN useradd --system --uid 10001 --create-home savesync
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends restic \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
 COPY save_sync ./save_sync
 COPY wsgi.py ./
-RUN mkdir -p /data/save-sync/backups /data/save-sync/temporary && chown -R savesync:savesync /data/save-sync
+RUN mkdir -p /data/save-sync/backups /data/save-sync/temporary \
+    && chown -R savesync:savesync /data/save-sync \
+    && chmod 700 /data/save-sync/temporary
 USER savesync
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

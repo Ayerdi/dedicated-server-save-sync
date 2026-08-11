@@ -54,10 +54,11 @@ ser una operación administrativa diseñada y probada, no una copia de SQLite.
 | `SAVE_SYNC_MAX_UPLOAD_SIZE` | Tamaño ZIP máximo |
 | `SAVE_SYNC_LOCK_TTL_SECONDS` | TTL del lock, 300 por defecto |
 | `SAVE_SYNC_HEARTBEAT_INTERVAL_SECONDS` | Intervalo recomendado, 60 |
+| `SAVE_SYNC_RETENTION_PER_SLOT` | Versiones por slot (por defecto 1) |
+| `SAVE_SYNC_POST_PUBLISH_COMMAND` | Comando externo de backup tras publicar |
+| `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS` | Timeout del backup (por defecto 1800) |
 | `SAVE_SYNC_PROXY_SECRET` | Cabecera interna proxy/backend |
 | `SAVE_SYNC_CSRF_SECRET` | Firma CSRF del panel |
-| `SAVE_SYNC_RETENTION_PER_SLOT` | Versiones conservadas por slot (por defecto 1) |
-| `SAVE_SYNC_POST_PUBLISH_COMMAND` | Comando externo de backup tras publicar |
 
 Los dos últimos valores deben ser independientes, aleatorios y tener al menos
 32 caracteres. No deben aparecer en Traefik estático, logs o Git.
@@ -72,11 +73,28 @@ diez. El límite de espacio sigue siendo deliberado y configurable.
 
 Tras cada publicación confirmada se ejecuta
 `SAVE_SYNC_POST_PUBLISH_COMMAND` con las variables de entorno
-`SAVE_SYNC_PUBLISHED_VERSION`, `SAVE_SYNC_PUBLISHED_PATH` y
-`SAVE_SYNC_PUBLISHED_IDENTITY`. El comando se lanza en segundo plano, sin
-bloquear la respuesta al cliente, y un fallo en el hook nunca invalida la
-versión publicada. Está pensado para invocar un backup externo coherente del
-volumen (por ejemplo `restic backup /data/save-sync`).
+`SAVE_SYNC_PUBLISHED_VERSION`, `SAVE_SYNC_PUBLISHED_PATH`,
+`SAVE_SYNC_PUBLISHED_IDENTITY` y `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`.
+El comando se lanza en segundo plano, sin bloquear la respuesta al cliente, y
+cualquier fallo (incluido no poder arrancar el proceso) no invalida la versión
+publicada. Se respeta su timeout (`SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`,
+1800s por defecto) y se graba en auditoría `backup_hook_completed` o
+`backup_hook_failed` con el `exitCode` real.
+
+La imagen incluye `restic`; configúrese `RESTIC_REPOSITORY` y
+`RESTIC_PASSWORD` (o su equivalente) como secretos del despliegue. El cache de
+restic se dirige a `RESTIC_CACHE_DIR=/data/save-sync/temporary`, dentro del
+volumen escribible.
+
+> **Coherencia del backup:** el hook protege el ZIP publicado actual de la
+> retención mientras el backup lo necesita, pero no crea un snapshot
+> atómico de SQLite. Con `journal_mode=WAL` y uploads concurrentes,
+> `restic backup /data/save-sync` no es transaccional sobre la base. Para un
+> DR completo y coherente, combine `restic` (o su herramienta) con la
+> [SQLite Backup API](https://www.sqlite.org/backupapi.html) o suspenda el
+> servicio durante el backup del volumen. El único caso fuerte garantizado por
+> Save Sync es la integridad del **ZIP publicado** individual, que es
+> inmutable tras el commit.
 
 ## Despliegue
 

@@ -2,14 +2,16 @@
 
 ## 2.1.1
 
-- Garantiza que cualquier fallo del hook `SAVE_SYNC_POST_PUBLISH_COMMAND`
-  (incluidas `ValueError` de `shlex.split`) no invalida una publicación
-  confirmada.
-- Protege las versiones con backup en curso mediante una tabla
-  `pending_backups`: la limpieza de retención no borra el ZIP mientras el
-  proceso de backup asíncrono lo necesita.
-- Registra en auditoría (`backup_hook_completed`/`backup_hook_failed`) el
-  exit code real del backup externo.
+- `SAVE_SYNC_POST_PUBLISH_COMMAND` captura cualquier fallo (incluidas
+  `ValueError` de `shlex.split` y `OSError`/`FileNotFoundError` al lanzar el
+  proceso) de modo que una publicación confirmada siempre devuelve 201.
+- La tabla `pending_backups` protege de la retención los ZIP con backup en
+  curso; la limpieza del bootstrap usa `started_at` en lugar de borrar todo,
+  preservando pendientes de workers colegas vivos.
+- El proceso externo se cancela tras `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`;
+  se registra en auditoría `backup_hook_completed`/`backup_hook_failed` con
+  `exitCode` y `timedOut`.
+- La imagen incluye `restic` y dirige su caché a un volumen escribible.
 
 ## 2.1.0
 
