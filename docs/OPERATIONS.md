@@ -86,7 +86,7 @@ publicada. Se respeta su timeout (`SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`,
 > worker que lo armó. Si ese worker muere (p. ej. reinicio de Gunicorn), el
 > thread desaparece y el proceso externo queda huérfano: se pierde su timeout.
 > Tras `started_at < ahora - (timeout + 60s)`, otro `cleanup_canonical_versions`
-> paga el marker stale y reabre la retención, pero el proceso externo podría
+> purga el marcador stale y reabre la retención, pero el proceso externo podría
 > seguir ejecutable mientras tanto. Para la carga prevista (un par de hosts) se
 > asume; un scheduler/queue dedicado cambiaría esta ecuación.
 
