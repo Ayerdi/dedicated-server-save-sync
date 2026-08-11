@@ -1,6 +1,8 @@
 import hashlib
 import io
 import json
+import os
+import signal
 import sqlite3
 import subprocess
 import zipfile
@@ -466,19 +468,25 @@ def test_backup_hook_result_is_audited(app, monkeypatch):
 
 
 def test_backup_hook_timeout_terminates_and_audits_failure(app, monkeypatch):
+    sent_signals = []
+
+    def fake_killpg(pgid, sig):
+        sent_signals.append(sig)
+
+    monkeypatch.setattr(os, "killpg", fake_killpg)
+
     class HangingProcess:
         def __init__(self):
-            self.terminated = False
-            self.killed = False
+            self.pid = os.getpid()
+            self.calls = 0
 
         def wait(self, timeout=None):
-            raise subprocess.TimeoutExpired(cmd=["restic"], timeout=timeout or 0)
-
-        def terminate(self):
-            self.terminated = True
-
-        def kill(self):
-            self.killed = True
+            self.calls += 1
+            if self.calls == 1:
+                raise subprocess.TimeoutExpired(
+                    cmd=["restic"], timeout=timeout or 0
+                )
+            return -15
 
     captured = {}
 
@@ -501,11 +509,39 @@ def test_backup_hook_timeout_terminates_and_audits_failure(app, monkeypatch):
             break
         Event().wait(0.05)
     assert row is not None
+    assert row["success"] == 0
     details = json.loads(row["details"])
     assert details["version"] == 1
     assert details["timedOut"] == 1
-    assert process.terminated is True
-    assert process.killed is True
+    assert details["exitCode"] == -15
+    assert signal.SIGTERM in sent_signals
+    assert process.calls >= 2
+
+
+def test_orphan_pending_backups_are_purged_by_cleanup(app):
+    from save_sync.app import iso, utcnow
+
+    app.config["SAVE_SYNC_RETENTION_PER_SLOT"] = 1
+    # Comando de backup vacío: el hook no lanza proceso y la prueba es
+    # determinista. La purga stale ocurre dentro de cleanup_canonical_versions.
+    publish(app, b"v1", "admin")
+    publish(app, b"v2", "admin")
+    with app.extensions["save_sync_connect"]() as db:
+        old_started = iso(utcnow() - timedelta(seconds=9999))
+        db.execute(
+            "INSERT OR REPLACE INTO pending_backups(version,started_at) VALUES(?,?)",
+            (2, old_started),
+        )
+    publish(app, b"v3", "admin")
+    with app.extensions["save_sync_connect"]() as db:
+        pending = {
+            row[0] for row in db.execute("SELECT version FROM pending_backups")
+        }
+        versions = [
+            row[0] for row in db.execute("SELECT version FROM versions ORDER BY version")
+        ]
+    assert pending == set()
+    assert versions == [3]
 
 
 def test_post_publish_hook_popen_failure_clears_pending_backups(app, monkeypatch):

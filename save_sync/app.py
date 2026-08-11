@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import shlex
+import signal
 import sqlite3
 import stat
 import subprocess
@@ -50,6 +51,26 @@ def fsync_directory(path):
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+def _terminate_process_group(process, sigterm_timeout=10):
+    """Envia SIGTERM al grupo de proceso del hijo (start_new_session) y, si no
+    termina, SIGKILL al grupo completo. Nunca propaga errores al caller."""
+    pgid = process.pid
+    try:
+        pgid = os.getpgid(process.pid)
+    except OSError:
+        pass
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pgid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        try:
+            process.wait(timeout=sigterm_timeout)
+            return
+        except subprocess.TimeoutExpired:
+            continue
 
 
 def error(code, message, status, details=None):
@@ -145,6 +166,8 @@ def create_app(config=None):
     app.config.update(config or {})
     if int(app.config["SAVE_SYNC_RETENTION_PER_SLOT"]) < 1:
         raise RuntimeError("SAVE_SYNC_RETENTION_PER_SLOT debe ser >= 1")
+    if int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"]) < 1:
+        raise RuntimeError("SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS debe ser >= 1")
     game = dict(DEFAULT_GAME)
     game_config_path = str(app.config.get("SAVE_SYNC_GAME_CONFIG_PATH", "")).strip()
     if game_config_path:
@@ -379,10 +402,21 @@ def create_app(config=None):
         )
 
     retention_per_slot = int(app.config["SAVE_SYNC_RETENTION_PER_SLOT"])
+    backup_timeout = int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"])
 
     def cleanup_canonical_versions():
         """Conserva las últimas N versiones de cada slot configurado."""
         with transaction(immediate=True) as db:
+            # Purga first: marca como huérfanas las filas cuyo backup excedió el
+            # timeout (p. ej. worker reemplazado sin su thread). Esto evita que
+            # una versión protegida eternamente bloquee la retención.
+            stale_before = iso(
+                utcnow() - timedelta(seconds=backup_timeout + 60)
+            )
+            db.execute(
+                "DELETE FROM pending_backups WHERE started_at < ?",
+                (stale_before,),
+            )
             rows = db.execute(
                 "SELECT v.version,v.path,u.username FROM versions v "
                 "JOIN users u ON u.id=v.updated_by ORDER BY v.version DESC"
@@ -416,17 +450,7 @@ def create_app(config=None):
                     # huérfano se reintentará en el siguiente cleanup/arranque.
                     app.logger.exception("No se pudo eliminar ZIP obsoleto %s", path)
 
-    # Recupera limpiezas interrumpidas y la tabla de backups pendientes. Los
-    # backups cuyo proceso desapareció (worker reemplazado) se marcan como
-    # huérfanos en lugar de borrarse globalmente, para no invalidar los de un
-    # worker colega que sigue vivo. El propio thread de backup limpia su fila al
-    # terminar.
-    backup_timeout = int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"])
-    stale_before = iso(utcnow() - timedelta(seconds=backup_timeout + 60))
-    with transaction(immediate=True) as db:
-        db.execute(
-            "DELETE FROM pending_backups WHERE started_at < ?", (stale_before,)
-        )
+    # Recupera limpiezas interrumpidas y la tabla de backups pendientes.
     cleanup_canonical_versions()
 
     def run_post_publish_hook(version, relative_path, save_identity):
@@ -494,14 +518,11 @@ def create_app(config=None):
                 exit_code = process.wait(timeout=backup_timeout)
             except subprocess.TimeoutExpired:
                 timed_out = True
-                try:
-                    process.terminate()
-                    process.wait(timeout=10)
-                except Exception:
-                    try:
-                        process.kill()
-                    except Exception:
-                        pass
+                # El proceso arranca con start_new_session=True, así que su
+                # PGID es su propio PID. Se termina el grupo entero para no
+                # dejar huérfanos que sigan usando el ZIP publicado.
+                _terminate_process_group(process, sigterm_timeout=10)
+                exit_code = process.wait(timeout=5)
                 app.logger.warning(
                     "El backup externo de la versión %s superó el timeout de %ss",
                     version,

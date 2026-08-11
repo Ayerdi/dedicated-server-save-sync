@@ -84,7 +84,11 @@ publicada. Se respeta su timeout (`SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`,
 La imagen incluye `restic`; configúrese `RESTIC_REPOSITORY` y
 `RESTIC_PASSWORD` (o su equivalente) como secretos del despliegue. El cache de
 restic se dirige a `RESTIC_CACHE_DIR=/data/save-sync/temporary`, dentro del
-volumen escribible.
+volumen escribible. Excluya ese directorio del backup (ejemplo recomendado):
+
+```dotenv
+SAVE_SYNC_POST_PUBLISH_COMMAND=restic backup /data/save-sync --exclude /data/save-sync/temporary
+```
 
 > **Coherencia del backup:** el hook protege el ZIP publicado actual de la
 > retención mientras el backup lo necesita, pero no crea un snapshot

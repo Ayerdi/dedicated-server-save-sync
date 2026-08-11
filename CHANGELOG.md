@@ -10,8 +10,12 @@
   preservando pendientes de workers colegas vivos.
 - El proceso externo se cancela tras `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`;
   se registra en auditoría `backup_hook_completed`/`backup_hook_failed` con
-  `exitCode` y `timedOut`.
-- La imagen incluye `restic` y dirige su caché a un volumen escribible.
+  `exitCode` y `timedOut`. El grupo de proceso completo se termina en caso de
+  timeout.
+- La imagen incluye `restic`; el caché se dirige a un volumen escribible y se
+  recomienda excluirlo del backup. Se valida `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`.
+- La purga de `pending_backups` obsoletos pasa dentro de `cleanup_canonical_versions`,
+  de modo que un worker caído no deja versiones protegidas para siempre.
 
 ## 2.1.0
 
