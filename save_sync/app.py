@@ -26,7 +26,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 GAME_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def utcnow():
@@ -463,8 +463,87 @@ def create_app(config=None):
                 process.pid,
             )
 
+    def arm_backup_marker(db, version):
+        """Marca la versión como pendiente de backup cuando el hook está activo.
+        Se llama dentro de la transacción de publicación/restore para que la
+        protección contra la retención sea atómica con la creación de la
+        versión."""
+        if not str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip():
+            return
+        db.execute(
+            "INSERT OR REPLACE INTO pending_backups(version,started_at) VALUES(?,?)",
+            (version, iso(utcnow())),
+        )
+
+    def release_backup_marker(version, success, exit_code=0, timed_out=False, reason=None):
+        """Desmarca el backup y audita el resultado. Best-effort: nunca invalida
+        una publicación ya confirmada."""
+        details = {
+            "version": version,
+            "exitCode": exit_code,
+            "timedOut": 1 if timed_out else 0,
+        }
+        if reason:
+            details["reason"] = reason
+        try:
+            with transaction(immediate=True) as db:
+                db.execute(
+                    "DELETE FROM pending_backups WHERE version=?", (version,)
+                )
+                audit(
+                    db,
+                    "backup_hook_completed" if success else "backup_hook_failed",
+                    None,
+                    success,
+                    **details,
+                )
+        except Exception:
+            app.logger.exception(
+                "No se pudo registrar el resultado del backup de la versión %s",
+                version,
+            )
+
+    def await_backup_result(process, version):
+        exit_code = 0
+        timed_out = False
+        success = False
+        try:
+            exit_code = process.wait(timeout=backup_timeout)
+            success = exit_code == 0
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            # El proceso arranca con start_new_session=True, así que su PGID es
+            # su propio PID. Se termina el grupo entero para no dejar huérfanos
+            # que sigan usando el ZIP publicado.
+            terminate_process_group(process, sigterm_timeout=10)
+            try:
+                exit_code = process.wait(timeout=5)
+                # timed_out ya implica fracaso; success se mantiene False.
+            except subprocess.TimeoutExpired:
+                exit_code = -1
+                app.logger.warning(
+                    "El backup externo de la versión %s no terminó tras SIGKILL",
+                    version,
+                )
+        finally:
+            release_backup_marker(version, success, exit_code, timed_out)
+            try:
+                cleanup_canonical_versions()
+            except Exception:
+                app.logger.exception(
+                    "La limpieza post-backup falló; la versión %s se conserva",
+                    version,
+                )
+            if not success or timed_out:
+                app.logger.warning(
+                    "El backup externo de la versión %s terminó con exit code %s%s",
+                    version,
+                    exit_code,
+                    " (timeout)" if timed_out else "",
+                )
+
     def run_post_publish_hook(version, relative_path, save_identity):
-        """Ejecuta el backup externo; nunca invalida la publicación."""
+        """Lanza el backup externo; nunca invalida la publicación confirmada."""
         command = str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip()
         if not command:
             return
@@ -481,11 +560,6 @@ def create_app(config=None):
             argv = shlex.split(command)
             if not argv:
                 return
-            with transaction(immediate=True) as db:
-                db.execute(
-                    "INSERT OR REPLACE INTO pending_backups(version,started_at) VALUES(?,?)",
-                    (version, iso(utcnow())),
-                )
             process = subprocess.Popen(
                 argv,
                 env=env,
@@ -496,22 +570,14 @@ def create_app(config=None):
                 close_fds=True,
             )
         except Exception:
-            # Popen() falló: no hay proceso que espere, así que la fila pendiente
-            # no es necesaria y debe limpiarse inmediatamente o la retención
-            # bloquearía esta versión para siempre.
+            # Popen()/shlex.split() falló: no hay proceso que esperar. La
+            # versión ya está publicada; liberamos el marcador best-effort y
+            # nunca devolvemos error al cliente.
             app.logger.exception(
                 "Falló el hook post-publicación; la versión %s permanece publicada",
                 version,
             )
-            try:
-                with transaction(immediate=True) as db:
-                    db.execute(
-                        "DELETE FROM pending_backups WHERE version=?", (version,)
-                    )
-            except Exception:
-                app.logger.exception(
-                    "No se pudo limpiar pending_backups tras fallo del hook"
-                )
+            release_backup_marker(version, False, reason="hook_launch_failed")
             try:
                 cleanup_canonical_versions()
             except Exception:
@@ -521,60 +587,30 @@ def create_app(config=None):
                 )
             return
 
-        def await_backup_result():
-            exit_code = 0
-            timed_out = False
-            try:
-                exit_code = process.wait(timeout=backup_timeout)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                # El proceso arranca con start_new_session=True, así que su
-                # PGID es su propio PID. Se termina el grupo entero para no
-                # dejar huérfanos que sigan usando el ZIP publicado.
-                terminate_process_group(process, sigterm_timeout=10)
-                exit_code = process.wait(timeout=5)
-                app.logger.warning(
-                    "El backup externo de la versión %s superó el timeout de %ss",
-                    version,
-                    backup_timeout,
-                )
-            try:
-                with transaction(immediate=True) as db:
-                    db.execute(
-                        "DELETE FROM pending_backups WHERE version=?", (version,)
-                    )
-                    audit(
-                        db,
-                        "backup_hook_completed"
-                        if exit_code == 0 and not timed_out
-                        else "backup_hook_failed",
-                        None,
-                        exit_code == 0 and not timed_out,
-                        version=version,
-                        exitCode=exit_code,
-                        timedOut=1 if timed_out else 0,
-                    )
-            except Exception:
-                app.logger.exception(
-                    "No se pudo registrar el resultado del backup de la versión %s",
-                    version,
-                )
+        try:
+            threading.Thread(
+                target=await_backup_result,
+                args=(process, version),
+                daemon=True,
+            ).start()
+        except Exception:
+            # La publicación ya confirmó (COMMIT hecho). Matamos el proceso
+            # best-effort, liberamos el marcador y limpiamos, pero NUNCA
+            # devolvemos 500: la partida se publicó correctamente.
+            app.logger.exception(
+                "No se pudo iniciar el supervisor de backup para la versión %s; "
+                "la versión permanece publicada",
+                version,
+            )
+            terminate_process_group(process)
+            release_backup_marker(version, False, reason="thread_start_failed")
             try:
                 cleanup_canonical_versions()
             except Exception:
                 app.logger.exception(
-                    "La limpieza post-backup falló; la versión %s se conserva",
+                    "La limpieza post-fallo-del-supervisor falló; la versión %s se conserva",
                     version,
                 )
-            if exit_code != 0 or timed_out:
-                app.logger.warning(
-                    "El backup externo de la versión %s terminó con exit code %s%s",
-                    version,
-                    exit_code,
-                    " (timeout)" if timed_out else "",
-                )
-
-        threading.Thread(target=await_backup_result, daemon=True).start()
 
     def audit(db, event, user=None, success=True, client_id=None, **details):
         db.execute(
@@ -1298,6 +1334,12 @@ def create_app(config=None):
                     "INSERT INTO current_save(singleton,version) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET version=excluded.version",
                     (new_version,),
                 )
+                # Marca de backup ATÓMICA con la publicación: la protección
+                # contra la retención debe existir desde el mismo instante en
+                # que la versión es viable. No insertarlo aquí fuera permitiría
+                # que otro publish del mismo slot eliminara el ZIP antes de que
+                # run_post_publish_hook() armara el marcador.
+                arm_backup_marker(db, new_version)
                 db.execute("DELETE FROM active_lock WHERE singleton=1")
                 audit(
                     db,
@@ -1557,6 +1599,8 @@ def create_app(config=None):
                     "INSERT INTO current_save VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET version=excluded.version",
                     (new_version,),
                 )
+                # Marcador de backup atómico con la restauración publicada.
+                arm_backup_marker(db, new_version)
                 audit(
                     db,
                     "backup_restored",
@@ -1601,12 +1645,22 @@ def create_app(config=None):
                 "SELECT * FROM versions WHERE version=?", (version,)
             ).fetchone()
             if not row:
-                return error("version_not_found", "Versión no encontrada.", 404)
+               return error("version_not_found", "Versión no encontrada.", 404)
             if version == current["version"]:
                 return error(
                     "version_current",
                     "La versión actual no puede eliminarse.",
                     409,
+                )
+            pending = db.execute(
+                "SELECT 1 FROM pending_backups WHERE version=?", (version,)
+            ).fetchone()
+            if pending:
+                return error(
+                    "backup_in_progress",
+                    "La versión tiene un backup externo en curso.",
+                    409,
+                    {"version": version},
                 )
             db.execute("DELETE FROM versions WHERE version=?", (version,))
             audit(db, "backup_deleted", g.save_sync_user, True, version=version)

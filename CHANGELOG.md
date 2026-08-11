@@ -3,19 +3,33 @@
 ## 2.1.1
 
 - `SAVE_SYNC_POST_PUBLISH_COMMAND` captura cualquier fallo (incluidas
-  `ValueError` de `shlex.split` y `OSError`/`FileNotFoundError` al lanzar el
-  proceso) de modo que una publicación confirmada siempre devuelve 201.
+  `ValueError` de `shlex.split`, `OSError`/`FileNotFoundError` al lanzar el
+  proceso y la imposibilidad de crear el thread supervisor) de modo que una
+  publicación confirmada siempre devuelve 201.
+- El marcador `pending_backups` se inserta **atómicamente dentro de la
+  transacción de publicación/restore**, cerrando la carrera entre la
+  publicación de la versión y su protección frente a la retención.
 - La tabla `pending_backups` protege de la retención los ZIP con backup en
   curso; la limpieza del bootstrap usa `started_at` en lugar de borrar todo,
   preservando pendientes de workers colegas vivos.
+- El endpoint `DELETE /history/<version>` rechaza (409 `backup_in_progress`)
+  borrar versiones con backup en curso; sólo se permite tras liberarse el
+  marcador.
 - El proceso externo se cancela tras `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`;
   se registra en auditoría `backup_hook_completed`/`backup_hook_failed` con
-  `exitCode` y `timedOut`. El grupo de proceso completo se termina en caso de
-  timeout.
+  `exitCode` y `timedOut`. El grupo de proceso completo (incluidos nietos) se
+  termina en caso de timeout.
 - La imagen incluye `restic`; el caché se dirige a un volumen escribible y se
-  recomienda excluirlo del backup. Se valida `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`.
-- La purga de `pending_backups` obsoletos pasa dentro de `cleanup_canonical_versions`,
-  de modo que un worker caído no deja versiones protegidas para siempre.
+  exige excluirlo del backup (`--exclude`). Se valida
+  `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS >= 1`.
+- La purga de `pending_backups` obsoletos pasa dentro de
+  `cleanup_canonical_versions`, de modo que un worker caído no deja versiones
+  protegidas para siempre; el supervisor de backup usa `try/finally` para
+  liberar el marcador, auditar y reaplicar la retención incluso en fallos.
+- `SCHEMA_VERSION` pasa a 3 al introducir la tabla `pending_backups`.
+- La documentación aclara que el backup externo protege al ZIP publicado
+  inmutable, pero un `restic backup` sobre el volumen no es un snapshot
+  transaccional de SQLite.
 
 ## 2.1.0
 

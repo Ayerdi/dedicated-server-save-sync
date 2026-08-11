@@ -5,6 +5,7 @@ import os
 import signal
 import sqlite3
 import subprocess
+import threading
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
@@ -17,6 +18,15 @@ from save_sync.app import create_app, digest, iso, utcnow
 
 
 WORLD_GUID = "A7E97BAA767DB9029EF013BB71E993A0"
+
+
+class _ThreadThatFailsToStart(threading.Thread):
+    """Simula que el SO no puede crear más threads (p. ej. límite de
+    recursos). start() lanza excepción, reproduciendo el escenario en el que
+    el supervisor de backup no puede iniciarse tras la publicación confirmada."""
+
+    def start(self):
+        raise RuntimeError("no se pueden crear más threads")
 
 
 def zip_payload(marker=b"save"):
@@ -707,3 +717,112 @@ def test_restart_uses_persisted_lock_and_current_version(app):
     assert status.get_json()["version"] == 1
     assert status.get_json()["locked"] is True
     assert heartbeat.status_code == 200
+
+
+def test_post_publish_hook_thread_start_failure_never_breaks_publication(
+    app, monkeypatch
+):
+    """Thread.start() falla tras publicación confirmada: sigue 201 y se libera
+    el marcador de backup."""
+    monkeypatch.setattr(threading, "Thread", _ThreadThatFailsToStart)
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: None)
+
+    class DummyProcess:
+        pid = os.getpid()
+
+        def wait(self, timeout=None):
+            return -15
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: DummyProcess())
+    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = "restic backup /data/save-sync"
+    app.config["SAVE_SYNC_RETENTION_PER_SLOT"] = 1
+
+    result = publish(app, b"v1")
+    assert result["version"] == 1
+    with app.test_client() as client:
+        downloaded = client.get("/api/games/palworld/download", headers=headers("admin"))
+    assert downloaded.status_code == 200
+    with app.extensions["save_sync_connect"]() as db:
+        pending = [row[0] for row in db.execute("SELECT version FROM pending_backups")]
+        versions = [
+            row[0]
+            for row in db.execute("SELECT version FROM versions ORDER BY version")
+        ]
+        failed = db.execute(
+            "SELECT details FROM audit WHERE event=?", ("backup_hook_failed",)
+        ).fetchall()
+    assert pending == []
+    assert versions == [1]
+    assert any(
+        json.loads(row["details"]).get("reason") == "thread_start_failed"
+        for row in failed
+    )
+
+
+def test_history_delete_rejects_version_with_pending_backup(tmp_path, monkeypatch):
+    """ 🔴 #2: borrar una versión con backup en curso devuelve 409; vuelve a
+    funcionar (200) una vez el backup termina y se libera el marcador.
+
+    Usa una app con retención=2 (más alto que la versión publicada) para que el
+    cleanup post-backup no elimine previamente v1, dejando constar el
+    comportamiento del endpoint admin frente a pending_backups."""
+    blocker = Event()
+    storage = tmp_path / "storage"
+
+    class HangingProcess:
+        pid = os.getpid()
+
+        def wait(self, timeout=None):
+            blocker.wait(timeout=30)
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: HangingProcess())
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: None)
+
+    application = create_app(
+        {
+            "TESTING": True,
+            "SAVE_SYNC_STORAGE_PATH": str(storage),
+            "SAVE_SYNC_DB_PATH": str(storage / "palworld.sqlite3"),
+            "SAVE_SYNC_REQUIRE_HTTPS": False,
+            "SAVE_SYNC_PROXY_SECRET": "proxy-test-secret",
+            "SAVE_SYNC_CSRF_SECRET": "csrf-test-secret",
+            "SAVE_SYNC_LOCK_TTL_SECONDS": 300,
+            "SAVE_SYNC_RATE_LIMIT_PER_MINUTE": 10000,
+            "SAVE_SYNC_RETENTION_PER_SLOT": 2,
+            "SAVE_SYNC_POST_PUBLISH_COMMAND": "restic backup /data/save-sync",
+            "SAVE_SYNC_WEB_USERS": "admin:admin,player:player",
+            "SAVE_SYNC_USER_IDENTITIES_JSON": (
+                '{"admin":{"displayName":"Host A","slot":"host-a"},'
+                '"player":{"displayName":"Host B","slot":"host-b"}}'
+            ),
+        }
+    )
+    with application.extensions["save_sync_connect"]() as db:
+        admin = db.execute("SELECT id FROM users WHERE username=?", ("admin",)).fetchone()
+        db.execute(
+            "INSERT INTO api_tokens(user_id,name,token_hash,created_at) VALUES(?,?,?,?)",
+            (admin["id"], "test", digest("token-admin"), iso(utcnow())),
+        )
+
+    publish(application, b"v1")
+    publish(application, b"v2")
+
+    with application.test_client() as client:
+        blocked = client.delete(
+            "/api/games/palworld/history/1", headers=headers("admin"))
+    assert blocked.status_code == 409
+    assert blocked.get_json()["error"] == "backup_in_progress"
+
+    blocker.set()
+    for _ in range(100):
+        with application.extensions["save_sync_connect"]() as db:
+            gone = db.execute("SELECT 1 FROM pending_backups WHERE version=1").fetchone()
+        if gone is None:
+            break
+        Event().wait(0.05)
+
+    with application.test_client() as client:
+        deleted = client.delete(
+            "/api/games/palworld/history/1", headers=headers("admin"))
+    assert deleted.status_code == 200
