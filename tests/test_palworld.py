@@ -76,9 +76,11 @@ def test_backup_status_reports_pending_failure_and_completion(app):
     pending = client.get(endpoint, headers=auth()).get_json()
     assert pending["state"] == "pending"
     assert pending["pending"] is True
+    assert pending["stalePending"] is False
     assert pending["pendingVersions"] == [
         {"version": 1, "startedAt": "2026-08-12T10:00:00Z"}
     ]
+    assert pending["stalePendingVersions"] == []
 
     with connect() as db:
         db.execute("DELETE FROM pending_backups WHERE version=1")
@@ -114,6 +116,40 @@ def test_backup_status_reports_pending_failure_and_completion(app):
     assert completed["latestVersionBackedUp"] is True
     assert completed["lastAttempt"] == completed["lastCompleted"]
     assert completed["lastCompleted"]["completedAt"] == "2026-08-12T10:02:00Z"
+
+
+def test_backup_status_treats_stale_pending_as_unknown_without_mutating_db(app):
+    client = app.test_client()
+    initialize(client)
+    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = "restic backup /data/save-sync"
+    endpoint = "/api/games/palworld/backup-status"
+    stale_started = (
+        datetime.now(timezone.utc)
+        - timedelta(
+            seconds=int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"]) + 61
+        )
+    ).isoformat().replace("+00:00", "Z")
+
+    connect = app.extensions["save_sync_connect"]
+    with connect() as db:
+        db.execute(
+            "INSERT INTO pending_backups(version,started_at) VALUES(?,?)",
+            (1, stale_started),
+        )
+
+    snapshot = client.get(endpoint, headers=auth()).get_json()
+    assert snapshot["state"] == "unknown"
+    assert snapshot["pending"] is False
+    assert snapshot["pendingVersions"] == []
+    assert snapshot["stalePending"] is True
+    assert snapshot["stalePendingVersions"] == [
+        {"version": 1, "startedAt": stale_started}
+    ]
+
+    with connect() as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM pending_backups WHERE version=1"
+        ).fetchone()[0] == 1
 
 
 def test_04_second_user_lock_is_conflict(client):
@@ -359,6 +395,8 @@ def test_panel_escapes_api_values_used_in_inner_html(client):
     assert "${esc(v.sha256)}" in panel
     assert "${esc(x[1])}" in panel
     assert "${t.name}" not in panel
+    assert "catch(()=>null)" in panel
+    assert "Estado: no disponible" in panel
 
 
 def test_api_ignores_forged_authentik_headers(client):
