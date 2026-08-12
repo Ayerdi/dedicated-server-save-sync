@@ -5,7 +5,7 @@
 `adapters/<adapter>/Adapter.ps1`. Toda diferencia por equipo vive en
 `config.json` y en los secretos DPAPI.
 
-> **Alcance estable:** la release de producto `v2.2.0` soporta Palworld. Las
+> **Alcance estable:** la release de producto `v2.2.1` soporta Palworld. Las
 > abstracciones de adaptador se conservan porque forman parte de la arquitectura,
 > pero nuevos juegos y el rediseño multi-juego quedan fuera del roadmap de
 > mantenimiento de este repositorio.
@@ -14,7 +14,7 @@
 
 Hay dos números distintos de forma deliberada:
 
-- `v2.2.0`: release del **producto** (backend, cliente empaquetado, docs y
+- `v2.2.1`: release del **producto** (backend, cliente empaquetado, docs y
   proceso de publicación);
 - `clientVersion=1.2.0`: versión del **adaptador/cliente Palworld** que se
   registra en el manifest del ZIP y en mensajes de diagnóstico.

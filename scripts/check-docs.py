@@ -11,6 +11,28 @@ WIKI_ROOT = ROOT / "wiki"
 PAGES_PREFIX = "/dedicated-server-save-sync/"
 LINK_RE = re.compile(r"(?<!!)\[[^]]+\]\(([^)]+)\)")
 WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+CURRENT_STABLE = "v2.2.1"
+PREVIOUS_STABLE = "v2.2.0"
+# Superficies que presentan la versión recomendada actual y, por tanto, no
+# deben conservar punteros a la release estable anterior. Los índices y
+# documentos de historial se excluyen deliberadamente porque deben poder
+# enlazar notas de releases pasadas.
+CURRENT_SURFACES = (
+    "README.md",
+    "README.en.md",
+    "client/README.md",
+    "CONTRIBUTING.md",
+    "docs/AGENT-HANDOFF.md",
+    "docs/ADAPTING-OTHER-GAMES.md",
+    "site/index.html",
+    "site/en/index.html",
+    "wiki/Home.md",
+    "wiki/Home-English.md",
+    "wiki/Instalacion.md",
+    "wiki/Installation.md",
+    "wiki/Cliente-Windows.md",
+    "wiki/Windows-Client.md",
+)
 
 
 class HtmlLinks(HTMLParser):
@@ -125,13 +147,29 @@ def main():
                     f"{document.relative_to(ROOT)}: ancla inexistente: {raw_target}"
                 )
 
+    for relative in CURRENT_SURFACES:
+        document = ROOT / relative
+        if not document.exists():
+            failures.append(f"{relative}: superficie estable inexistente")
+            continue
+        text = document.read_text(encoding="utf-8")
+        if CURRENT_STABLE not in text:
+            failures.append(
+                f"{relative}: no menciona la release estable {CURRENT_STABLE}"
+            )
+        if PREVIOUS_STABLE in text:
+            failures.append(
+                f"{relative}: conserva un puntero estable obsoleto {PREVIOUS_STABLE}"
+            )
+
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1
     print(
         "Documentación OK: "
         f"{len(markdown_files)} Markdown, {len(wiki_files)} páginas Wiki y "
-        f"{len(html_files)} páginas HTML revisadas."
+        f"{len(html_files)} páginas HTML revisadas; punteros estables "
+        f"alineados con {CURRENT_STABLE}."
     )
     return 0
 

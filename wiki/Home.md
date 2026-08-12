@@ -1,6 +1,6 @@
 # Dedicated Server Save Sync
 
-**Versión estable: v2.2.0 · Palworld**
+**Versión estable: v2.2.1 · Palworld**
 
 Save Sync permite alternar qué PC aloja un servidor dedicado de Palworld sin
 copiar saves a mano ni mantener uno de los PCs encendido permanentemente.
@@ -19,6 +19,10 @@ copiar saves a mano ni mantener uno de los PCs encendido permanentemente.
 Save Sync usa una versión autoritativa, `baseVersion`, un lock con heartbeat,
 `worldGuid`, SHA-256 y publicación atómica. Una copia antigua no puede
 sobrescribir silenciosamente progreso más reciente.
+
+Los backups externos se encolan de forma durable en SQLite y los ejecuta un
+supervisor independiente del proceso web; un reinicio del host web no pierde la
+supervisión del trabajo pendiente.
 
 El proyecto no puede fusionar dos mundos que ya hayan divergido.
 

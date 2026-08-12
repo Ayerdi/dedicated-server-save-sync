@@ -2,27 +2,57 @@
 
 ## Release estable actual
 
-La release estable de referencia es `v2.2.0`.
+La release estable de referencia es `v2.2.1`.
 
-La publicación original de `v2.2.0` se generó automáticamente desde el commit
+`v2.2.1` cierra el hardening operativo previo a la publicación pública: cola
+durable de backups, supervisor independiente de Gunicorn, retención crash-safe,
+Restic 0.18.0 fijado por SHA-256 y E2E de caída/reinicio.
+
+El cliente publicado contiene:
+
+```text
+dedicated-server-save-sync-client-v2.2.1.zip
+dedicated-server-save-sync-client-v2.2.1.zip.sha256
+```
+
+La release se construye dos veces de forma determinista antes de publicarse. El
+SHA-256 exacto del ZIP se calibró en CI sobre el mismo contenido empaquetable y
+queda fijado en el preflight público antes del merge de publicación:
+
+```text
+sha256:4ee67ecdb617374c74f39db3819d6a6dae50618111102fa8a196c3f2beceacfc
+```
+
+Tras publicar, este documento se actualiza únicamente si GitHub confirma el
+mismo digest. La release nunca se sobrescribe para hacerla coincidir con `main`.
+
+## Release anterior v2.2.0
+
+La publicación original de `v2.2.0` se generó desde el commit
 `b085453f4bdd39d7c336980b0a27ce79605aa7a2`. El workflow construyó dos veces el
-mismo cliente, comparó SHA-256 y contenido binario y solo entonces adjuntó:
+mismo cliente, comparó SHA-256 y contenido binario y adjuntó:
 
 ```text
 dedicated-server-save-sync-client-v2.2.0.zip
 dedicated-server-save-sync-client-v2.2.0.zip.sha256
 ```
 
-El workflow de una sola versión que realizó esa publicación se conserva en el
-historial Git y en el tag, pero se retira de `main` después de cumplir su función
-para no dejar permanentemente un workflow específico con `contents: write`.
+Su digest histórico es:
+
+```text
+sha256:4d07ce1eb70f79471dca8d5f1ed9c4d7a37aaebbf53f5668d84be2058a781494
+```
+
+Ese dato se conserva como procedencia histórica; `v2.2.0` ya no es la release
+recomendada para nuevas instalaciones.
 
 ## Builder reproducible
 
-Para construir localmente:
+Para construir v2.2.1 localmente:
 
 ```bash
-bash scripts/build-release.sh 2.2.0
+bash scripts/build-release.sh 2.2.1
+sha256sum --check dist/dedicated-server-save-sync-client-v2.2.1.zip.sha256
 ```
 
 El builder:
@@ -31,24 +61,13 @@ El builder:
 - fija timestamp ZIP a 1980-01-01;
 - normaliza permisos;
 - excluye tests, `config.json`, secretos y `client/data`;
+- incluye `CHANGELOG.md`, `LICENSE` y `SECURITY.md`;
 - genera SHA-256.
 
-La release publicada de `v2.2.0` tiene como digest del ZIP:
+## Proceso de mantenimiento
 
-```text
-4d07ce1eb70f79471dca8d5f1ed9c4d7a37aaebbf53f5668d84be2058a781494
-```
-
-Comprueba un build local contra su propio checksum con:
-
-```bash
-sha256sum --check dist/dedicated-server-save-sync-client-v2.2.0.zip.sha256
-```
-
-## Releases posteriores de mantenimiento
-
-Las futuras releases se publican explícitamente desde un checkout limpio de
-`main`; no existe un workflow con permiso de escritura esperando a un evento de
+Las releases posteriores se publican desde un checkout limpio de `main`; no se
+mantiene permanentemente un workflow con permiso de escritura esperando un
 push.
 
 Preparación de una versión `X.Y.Z`:
@@ -63,21 +82,15 @@ Preparación de una versión `X.Y.Z`:
    bash scripts/publish-release.sh X.Y.Z --apply
    ```
 
-El script se niega a publicar si:
+El script se niega a publicar si el árbol está sucio, no se ejecuta desde
+`main`, `HEAD` difiere de `origin/main`, la CI exacta no está verde, faltan
+changelog/notas o ya existe el tag/release. Si los preflight pasan, ejecuta el
+safety check, genera el ZIP dos veces, compara SHA-256 y bytes y crea la release
+apuntando al commit exacto.
 
-- el árbol tiene cambios locales;
-- no se ejecuta desde `main`;
-- `HEAD` difiere de `origin/main`;
-- la CI más reciente de `main` no es `completed:success` para ese SHA;
-- faltan changelog o notas;
-- ya existe el tag o la release.
-
-Si los preflight pasan, ejecuta `scripts/check-repository.sh`, genera el ZIP dos
-veces, compara SHA-256 y bytes y crea la release apuntando al commit exacto.
-
-El tag/release creado por GitHub CLI no se presenta como firma GPG del
-mantenedor. La integridad del cliente se publica mediante SHA-256, y la
-procedencia se apoya en el commit de `main`, la CI, la revisión por PR y el
-proceso versionado de construcción.
+Para `v2.2.1`, al ser la release de apertura pública, se usa además un workflow
+one-shot versionado: en PR solo calibra el build con `contents: read`; el job con
+`contents: write` existe únicamente para el push de merge que crea la release.
+El workflow se retira de `main` después de verificar la publicación.
 
 No publicar saves, datos runtime, configuración real ni logs como assets.

@@ -23,7 +23,8 @@
 ## Mantenimiento y publicación
 
 - [Releases](RELEASES.md): artefactos reproducibles, checksum y proceso futuro.
-- [Notas v2.2.0](RELEASE-NOTES-v2.2.0.md): release estable de referencia.
+- [Notas v2.2.1](RELEASE-NOTES-v2.2.1.md): release estable de referencia y hardening final.
+- [Notas v2.2.0](RELEASE-NOTES-v2.2.0.md): release anterior y preparación pública inicial.
 - [Checklist de publicación](PUBLICATION.md): seguridad y cambio de visibilidad.
 - [Guía para agentes/contribuidores](AGENT-HANDOFF.md): orden de lectura,
   invariantes y alcance de mantenimiento.

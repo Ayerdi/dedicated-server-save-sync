@@ -6,7 +6,7 @@
 
 **Concurrency-safe save synchronization for alternating Palworld dedicated-server hosts without keeping one gaming PC online 24/7.**
 
-> **Status:** `v2.2.0` is the stable Palworld reference implementation. This repository is in maintenance mode: bug fixes, security, dependency updates and Palworld compatibility. The broader multi-game redesign will be developed separately.
+> **Status:** `v2.2.1` is the stable Palworld reference implementation. This repository is in maintenance mode: bug fixes, security, dependency updates and Palworld compatibility. The broader multi-game redesign will be developed separately.
 
 [Español](README.md) · [Website](https://ayerdi.github.io/dedicated-server-save-sync/en/) · [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki) · [Releases](https://github.com/Ayerdi/dedicated-server-save-sync/releases) · [Docs](docs/INDEX.md)
 
@@ -44,7 +44,7 @@ The active gaming PC runs PalServer. The web service keeps the authoritative ver
 - per-machine Bearer tokens stored only as hashes;
 - Windows DPAPI for client-side secrets;
 - configurable per-slot retention;
-- external backup hook with timeout and audit trail;
+- durable external-backup queue supervised outside Gunicorn, with timeout, retry and audit trail;
 - operational backup status without pretending a remote snapshot was checked live.
 
 Save Sync **cannot merge divergent worlds**. If two copies were independently modified, one must be chosen explicitly.
@@ -53,7 +53,7 @@ Save Sync **cannot merge divergent worlds**. If two copies were independently mo
 
 Windows hosts should download the client ZIP from the [latest release](https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest). Each release also includes a `.sha256` checksum.
 
-For production, use **the same product release** for the client and backend. The stable backend should be deployed from tag `v2.2.0`, not from the moving tip of `main`.
+For production, use **the same product release** for the client and backend. The stable backend should be deployed from tag `v2.2.1`, not from the moving tip of `main`.
 
 ## Quick start
 
@@ -67,7 +67,7 @@ Production requirements:
 - Traefik + ForwardAuth/AuthentiK for the private panel, or API-only mode.
 
 ```bash
-git clone --branch v2.2.0 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
+git clone --branch v2.2.1 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
 cd dedicated-server-save-sync
 config/deploy.sh --init-env
 ```
@@ -86,7 +86,7 @@ bash scripts/local-e2e.sh
 
 ### 2. Windows client
 
-1. Download `dedicated-server-save-sync-client-v2.2.0.zip` and its `.sha256` file from Releases.
+1. Download `dedicated-server-save-sync-client-v2.2.1.zip` and its `.sha256` file from Releases.
 2. Verify the checksum before extracting the archive.
 3. Copy `client/config.example.json` to `client/config.json`.
 4. Configure the public URL, PalServer path and `Adapter=palworld`.
@@ -97,7 +97,7 @@ bash scripts/local-e2e.sh
 PowerShell verification example:
 
 ```powershell
-$zip = 'dedicated-server-save-sync-client-v2.2.0.zip'
+$zip = 'dedicated-server-save-sync-client-v2.2.1.zip'
 $expected = ((Get-Content "$zip.sha256") -split '\s+')[0].ToLowerInvariant()
 $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw 'Client SHA-256 mismatch.' }
@@ -118,7 +118,9 @@ Read [client/README.md](client/README.md) and [docs/OPERATIONS.md](docs/OPERATIO
 
 `SAVE_SYNC_RETENTION_PER_SLOT` limits operational versions per host/slot.
 
-`SAVE_SYNC_POST_PUBLISH_COMMAND` can launch an external backup after a confirmed publication, for example with `restic`. A backup-hook failure cannot turn an already-confirmed upload into an API failure; hook results are audited separately.
+`SAVE_SYNC_POST_PUBLISH_COMMAND` defines the external backup performed after a confirmed publication, for example with `restic`. The backend enqueues the work in SQLite and a `backup-supervisor` sidecar independent from Gunicorn executes it, enforces the timeout and keeps the row for retry if the supervisor crashes. The external command must remain in the foreground and be idempotent or tolerate repeated execution.
+
+A version with a pending backup stays protected from retention until a final result is known. Physical ZIP deletion happens only after retention metadata is committed and references are revalidated, so a crash can leave a recoverable orphan file but cannot make a rolled-back transaction point at a ZIP it already deleted.
 
 The panel and `GET /backup-status` distinguish:
 
@@ -139,7 +141,7 @@ Never publish:
 - saves, ZIP archives, SQLite files, complete logs or production paths;
 - real GUIDs, IPs, domains or personal names in public issues.
 
-CI runs Ruff, pytest with an 85% coverage floor, `pip-audit`, Docker E2E, Pester and Gitleaks over Git history.
+CI runs Ruff, pytest with an 85% coverage floor, `pip-audit`, Docker E2E —including supervisor crash/restart—, Pester and Gitleaks over Git history.
 
 Use [SECURITY.md](SECURITY.md) for vulnerabilities. Use [GitHub Discussions](https://github.com/Ayerdi/dedicated-server-save-sync/discussions) or [issues](https://github.com/Ayerdi/dedicated-server-save-sync/issues) for non-sensitive support.
 

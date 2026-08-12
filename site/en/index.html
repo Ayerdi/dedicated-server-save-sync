@@ -30,7 +30,7 @@
 
 <header class="hero">
   <div class="wrap">
-    <span class="kicker">v2.2.0 · stable · Palworld</span>
+    <span class="kicker">v2.2.1 · stable · Palworld</span>
     <h1>One authoritative save.<br>The host can change.</h1>
     <p>
       Dedicated Server Save Sync coordinates the same Palworld world across
@@ -38,9 +38,9 @@
       ZIP files around manually.
     </p>
     <div class="actions">
-      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/tag/v2.2.0">Download v2.2.0</a>
+      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/tag/v2.2.1">Download v2.2.1</a>
       <a class="button" href="#install">Installation</a>
-      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/blob/v2.2.0/docs/ARCHITECTURE.md">Architecture</a>
+      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/blob/v2.2.1/docs/ARCHITECTURE.md">Architecture</a>
     </div>
   </div>
 </header>
@@ -76,7 +76,7 @@
       <article class="card"><h3>Identity</h3><p>Palworld uses <code>worldGuid</code> to prevent publishing the wrong world.</p></article>
       <article class="card"><h3>Atomic publication</h3><p>Temporary ZIP, defensive validation, SHA-256 and transactional SQLite authority changes.</p></article>
       <article class="card"><h3>Recovery</h3><p>History, restore as a new version, pending ZIP recovery and operational rollback.</p></article>
-      <article class="card"><h3>External backup</h3><p>Post-publication hook, timeout, audit trail and observable state. Works with tools such as restic.</p></article>
+      <article class="card"><h3>Durable backup</h3><p>SQLite queue and a supervisor independent from Gunicorn, with timeout, retry, audit trail and crash-safe retention.</p></article>
       <article class="card"><h3>Secrets</h3><p>Bearer hashes server-side and DPAPI on Windows. Runtime files are excluded from source and release assets.</p></article>
     </div>
   </div>
@@ -90,15 +90,15 @@
     </div>
     <div class="status">
       <div class="card">
-        <h3>Backend v2.2.0</h3>
-        <pre>git clone --branch v2.2.0 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
+        <h3>Backend v2.2.1</h3>
+        <pre>git clone --branch v2.2.1 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
 cd dedicated-server-save-sync
 config/deploy.sh --init-env
 config/deploy.sh</pre>
         <p>Requires Docker Compose, HTTPS, private storage and Traefik/ForwardAuth or API-only mode.</p>
       </div>
       <div class="card">
-        <h3>Client v2.2.0</h3>
+        <h3>Client v2.2.1</h3>
         <p><strong>1.</strong> Download the ZIP and its <code>.sha256</code> file.</p>
         <p><strong>2.</strong> Verify SHA-256 before extracting it.</p>
         <p><strong>3.</strong> Copy <code>config.example.json</code> and configure the URL and PalServer.</p>
@@ -118,8 +118,8 @@ config/deploy.sh</pre>
     </div>
     <div class="grid">
       <div class="card"><h3>completed</h3><p>A successful audited result exists for the current version.</p></div>
-      <div class="card"><h3>pending</h3><p>An active backup marker exists inside its valid time window.</p></div>
-      <div class="card"><h3>unknown</h3><p>Evidence is insufficient, for example after a stale marker. It is never presented as success.</p></div>
+      <div class="card"><h3>pending</h3><p>The current version has work in the durable backup queue.</p></div>
+      <div class="card"><h3>unknown</h3><p>Evidence is insufficient; an old pending row is preserved and reported conservatively.</p></div>
     </div>
   </div>
 </section>
@@ -128,10 +128,10 @@ config/deploy.sh</pre>
   <div class="wrap">
     <div class="section-title">
       <h2>Feature-complete, not abandoned</h2>
-      <p>v2.2.0 closes feature development for this Palworld reference. Maintenance continues for bugs, security, dependencies and compatibility.</p>
+      <p>v2.2.1 closes the operational hardening before public release. Maintenance continues for bugs, security, dependencies and compatibility.</p>
     </div>
     <div class="actions">
-      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/tag/v2.2.0">Release v2.2.0</a>
+      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/tag/v2.2.1">Release v2.2.1</a>
       <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/wiki">Wiki</a>
       <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/discussions">Discussions</a>
     </div>
