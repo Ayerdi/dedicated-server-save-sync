@@ -2,6 +2,8 @@
 
 ## 2.1.1
 
+- Actualiza dependencias: gunicorn 26, pytest 9.1.1 y ruff 0.16 (con hashes),
+  y las acciones de CI (checkout v7, setup-python v7).
 - `SAVE_SYNC_POST_PUBLISH_COMMAND` captura cualquier fallo (incluidas
   `ValueError` de `shlex.split`, `OSError`/`FileNotFoundError` al lanzar el
   proceso y la imposibilidad de crear el thread supervisor) de modo que una
