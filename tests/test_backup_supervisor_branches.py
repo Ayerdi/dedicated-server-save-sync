@@ -1,4 +1,3 @@
-import os
 import signal
 import sqlite3
 import subprocess
@@ -6,7 +5,7 @@ import subprocess
 import pytest
 
 from save_sync import create_app
-from save_sync.backup_supervisor import BackupSupervisor
+from save_sync.backup_supervisor import BackupSupervisor, healthcheck
 
 WORLD_GUID = "A7E97BAA767DB9029EF013BB71E993A0"
 
@@ -67,6 +66,23 @@ def supervisor(storage, db_path):
     )
 
 
+def test_schema_ready_rejects_missing_and_future_database(tmp_path):
+    storage = tmp_path / "missing"
+    storage.mkdir()
+    db_path = storage / "save-sync.sqlite3"
+    worker = supervisor(storage, db_path)
+
+    assert worker.schema_ready() is False
+    assert not db_path.exists()
+
+    app, storage, db_path = make_app(tmp_path / "initialized")
+    worker = supervisor(storage, db_path)
+    assert worker.schema_ready() is True
+    with app.extensions["save_sync_connect"]() as db:
+        db.execute("PRAGMA user_version=4")
+    assert worker.schema_ready() is False
+
+
 def test_mark_attempt_started_detects_job_removed_between_poll_and_claim(tmp_path):
     app, storage, db_path = make_app(tmp_path)
     queue_one(app, storage)
@@ -113,24 +129,29 @@ def test_reconcile_filesystem_rolls_back_helper_failure(tmp_path, monkeypatch):
         worker.reconcile_filesystem()
 
 
-def test_terminate_process_group_returns_if_process_already_gone(tmp_path, monkeypatch):
+def test_terminate_process_group_returns_if_group_already_gone(tmp_path, monkeypatch):
     _, storage, db_path = make_app(tmp_path)
     worker = supervisor(storage, db_path)
+    calls = []
 
     class Process:
         pid = 123
 
-    monkeypatch.setattr(
-        "save_sync.backup_supervisor.os.getpgid",
-        lambda _pid: (_ for _ in ()).throw(ProcessLookupError()),
-    )
+    def killpg(pgid, sig):
+        calls.append((pgid, sig))
+        raise ProcessLookupError
+
+    monkeypatch.setattr("save_sync.backup_supervisor.os.killpg", killpg)
     worker.terminate_process_group(Process())
+    assert calls == [(123, signal.SIGTERM)]
 
 
-def test_terminate_process_group_stops_after_clean_sigterm(tmp_path, monkeypatch):
+def test_terminate_process_group_stops_when_group_dies_after_sigterm(
+    tmp_path, monkeypatch
+):
     _, storage, db_path = make_app(tmp_path)
     worker = supervisor(storage, db_path)
-    signals = []
+    calls = []
 
     class Process:
         pid = 123
@@ -139,13 +160,42 @@ def test_terminate_process_group_stops_after_clean_sigterm(tmp_path, monkeypatch
             assert timeout == 2
             return 0
 
-    monkeypatch.setattr("save_sync.backup_supervisor.os.getpgid", lambda _pid: 456)
+    def killpg(pgid, sig):
+        calls.append((pgid, sig))
+        if sig == 0:
+            raise ProcessLookupError
+
+    monkeypatch.setattr("save_sync.backup_supervisor.os.killpg", killpg)
+    worker.terminate_process_group(Process(), sigterm_timeout=2)
+    assert calls == [(123, signal.SIGTERM), (123, 0)]
+
+
+def test_terminate_process_group_kills_grandchild_after_leader_exits(
+    tmp_path, monkeypatch
+):
+    _, storage, db_path = make_app(tmp_path)
+    worker = supervisor(storage, db_path)
+    calls = []
+    waits = []
+
+    class Process:
+        pid = 123
+
+        def wait(self, timeout=None):
+            waits.append(timeout)
+            return 0
+
     monkeypatch.setattr(
         "save_sync.backup_supervisor.os.killpg",
-        lambda pgid, sig: signals.append((pgid, sig)),
+        lambda pgid, sig: calls.append((pgid, sig)),
     )
-    worker.terminate_process_group(Process(), sigterm_timeout=2)
-    assert signals == [(456, signal.SIGTERM)]
+    worker.terminate_process_group(Process(), sigterm_timeout=2, sigkill_timeout=3)
+    assert calls == [
+        (123, signal.SIGTERM),
+        (123, 0),
+        (123, signal.SIGKILL),
+    ]
+    assert waits == [2, 3]
 
 
 def test_terminate_process_group_escalates_and_tolerates_stuck_child(
@@ -153,7 +203,7 @@ def test_terminate_process_group_escalates_and_tolerates_stuck_child(
 ):
     _, storage, db_path = make_app(tmp_path)
     worker = supervisor(storage, db_path)
-    signals = []
+    calls = []
 
     class Process:
         pid = 123
@@ -161,15 +211,54 @@ def test_terminate_process_group_escalates_and_tolerates_stuck_child(
         def wait(self, timeout=None):
             raise subprocess.TimeoutExpired(cmd=["restic"], timeout=timeout or 0)
 
-    monkeypatch.setattr("save_sync.backup_supervisor.os.getpgid", lambda _pid: 456)
     monkeypatch.setattr(
         "save_sync.backup_supervisor.os.killpg",
-        lambda pgid, sig: signals.append((pgid, sig)),
+        lambda pgid, sig: calls.append((pgid, sig)),
     )
     worker.terminate_process_group(
         Process(), sigterm_timeout=0.01, sigkill_timeout=0.01
     )
-    assert signals == [(456, signal.SIGTERM), (456, signal.SIGKILL)]
+    assert calls == [
+        (123, signal.SIGTERM),
+        (123, 0),
+        (123, signal.SIGKILL),
+    ]
+
+
+def test_healthcheck_rejects_pending_queue_without_command(tmp_path, monkeypatch):
+    app, storage, db_path = make_app(tmp_path)
+    queue_one(app, storage)
+    worker = supervisor(storage, db_path)
+    worker.touch_heartbeat()
+
+    monkeypatch.setenv("SAVE_SYNC_STORAGE_PATH", str(storage))
+    monkeypatch.setenv("SAVE_SYNC_DB_PATH", str(db_path))
+    monkeypatch.setenv("SAVE_SYNC_POST_PUBLISH_COMMAND", "")
+    monkeypatch.setenv("SAVE_SYNC_BACKUP_POLL_SECONDS", "0.01")
+    assert healthcheck() is False
+
+    with app.extensions["save_sync_connect"]() as db:
+        db.execute("DELETE FROM pending_backups")
+    assert healthcheck() is True
+
+
+def test_run_once_warns_only_once_when_pending_backup_is_disabled(
+    tmp_path, monkeypatch
+):
+    app, storage, db_path = make_app(tmp_path)
+    queue_one(app, storage)
+    worker = supervisor(storage, db_path)
+    worker.command = ""
+    warnings = []
+    monkeypatch.setattr(
+        worker.logger,
+        "warning",
+        lambda *args, **_kwargs: warnings.append(args),
+    )
+
+    assert worker.run_once() is False
+    assert worker.run_once() is False
+    assert len(warnings) == 1
 
 
 def test_run_once_does_not_launch_after_losing_claim(tmp_path, monkeypatch):
