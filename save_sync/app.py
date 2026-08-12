@@ -1,7 +1,7 @@
+import fcntl
 import hashlib
 import hmac
 import html
-import fcntl
 import json
 import os
 import re
@@ -23,7 +23,6 @@ from pathlib import Path, PurePosixPath
 from flask import Flask, Response, g, jsonify, request, send_file
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.middleware.proxy_fix import ProxyFix
-
 
 GAME_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 SCHEMA_VERSION = 3
@@ -202,11 +201,11 @@ def create_app(config=None):
     except (TypeError, json.JSONDecodeError) as exc:
         raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON no es JSON válido") from exc
     if not isinstance(raw_identities, dict):
-        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON debe ser un objeto JSON")
+        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON debe ser un objeto JSON")  # noqa: TRY004
     identities = {}
     for username, profile in raw_identities.items():
         if not isinstance(profile, dict):
-            raise RuntimeError(f"Perfil de identidad inválido para {username}")
+            raise RuntimeError(f"Perfil de identidad inválido para {username}")  # noqa: TRY004
         display = str(profile.get("displayName", "")).strip()
         slot = str(profile.get("slot", "")).strip()
         if not username.strip() or not display or not slot:
@@ -1016,8 +1015,8 @@ def create_app(config=None):
                 (
                     digest(session_id),
                     g.save_sync_user["id"],
-                    g.save_sync_user["token_id"]
-                    if "token_id" in g.save_sync_user.keys()
+                    g.save_sync_user["token_id"]  # noqa: SIM401
+                    if "token_id" in g.save_sync_user
                     else None,
                     canonical_owner,
                     client_id,
@@ -1030,12 +1029,12 @@ def create_app(config=None):
             audit(
                 db, "lock_acquired", g.save_sync_user, True, client_id, baseVersion=base
             )
-        lock_response = dict(
-            sessionId=session_id,
-            baseVersion=base,
-            expiresAt=iso(expires),
-            gameKey=game_key,
-        )
+        lock_response = {
+            "sessionId": session_id,
+            "baseVersion": base,
+            "expiresAt": iso(expires),
+            "gameKey": game_key,
+        }
         lock_response.update(identity_json(version["save_identity"] if version else None))
         return jsonify(lock_response), 201
 
@@ -1059,7 +1058,7 @@ def create_app(config=None):
             same_token = row and (
                 row["token_id"] is None
                 or (
-                    "token_id" in g.save_sync_user.keys()
+                    "token_id" in g.save_sync_user
                     and row["token_id"] == g.save_sync_user["token_id"]
                 )
             )
@@ -1265,7 +1264,7 @@ def create_app(config=None):
                 same_token = lock and (
                     lock["token_id"] is None
                     or (
-                        "token_id" in g.save_sync_user.keys()
+                        "token_id" in g.save_sync_user
                         and lock["token_id"] == g.save_sync_user["token_id"]
                     )
                 )
@@ -1363,15 +1362,15 @@ def create_app(config=None):
                     "La limpieza post-publicación falló; la versión confirmada se conserva"
                 )
             run_post_publish_hook(new_version, relative, save_identity)
-            result = dict(
-                ok=True,
-                previousVersion=base,
-                version=new_version,
-                sha256=actual,
-                size=size,
-                updatedAt=updated_at,
-                gameKey=game_key,
-            )
+            result = {
+                "ok": True,
+                "previousVersion": base,
+                "version": new_version,
+                "sha256": actual,
+                "size": size,
+                "updatedAt": updated_at,
+                "gameKey": game_key,
+            }
             result.update(identity_json(save_identity))
             return jsonify(result), 201
         except Exception:
@@ -1624,15 +1623,15 @@ def create_app(config=None):
                 "La limpieza posterior a restauración falló; la versión confirmada se conserva"
             )
         run_post_publish_hook(new_version, relative, source["save_identity"])
-        result = dict(
-            ok=True,
-            version=new_version,
-            restoredFromVersion=version,
-            sha256=source["sha256"],
-            size=source["size"],
-            updatedAt=now,
-            gameKey=game_key,
-        )
+        result = {
+            "ok": True,
+            "version": new_version,
+            "restoredFromVersion": version,
+            "sha256": source["sha256"],
+            "size": source["size"],
+            "updatedAt": now,
+            "gameKey": game_key,
+        }
         result.update(identity_json(source["save_identity"]))
         return jsonify(result), 201
 
