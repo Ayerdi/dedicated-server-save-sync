@@ -11,7 +11,6 @@ import pytest
 
 from save_sync.app import create_app, digest, iso, utcnow
 
-
 WORLD_GUID = "A7E97BAA767DB9029EF013BB71E993A0"
 
 
@@ -385,9 +384,8 @@ def test_restore_failure_after_move_is_compensated_and_retryable(app):
             "WHEN NEW.restored_from_version IS NOT NULL "
             "BEGIN SELECT RAISE(ABORT,'injected restore failure'); END"
         )
-    with app.test_client() as client:
-        with pytest.raises(sqlite3.IntegrityError):
-            client.post("/api/games/palworld/history/1/restore", headers=headers("admin"))
+    with app.test_client() as client, pytest.raises(sqlite3.IntegrityError):
+        client.post("/api/games/palworld/history/1/restore", headers=headers("admin"))
 
     storage = app.config["SAVE_SYNC_STORAGE_PATH"]
     assert not Path(storage, "backups/save-v000002.zip").exists()
