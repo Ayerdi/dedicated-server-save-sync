@@ -35,7 +35,26 @@ jobs:
           git diff --exit-code -- requirements.txt requirements-dev.txt
       - run: ruff check save_sync tests wsgi.py scripts/check-docs.py scripts/backup-supervisor-e2e-hook.py
       - run: python scripts/check-docs.py
-      - run: python -m pytest -q
+      - name: Ejecutar pytest
+        shell: bash
+        run: |
+          set +e
+          python -m pytest -q 2>&1 | tee pytest.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if (( status != 0 )); then
+            python - <<'PY'
+          from pathlib import Path
+
+          lines = Path("pytest.log").read_text(encoding="utf-8", errors="replace").splitlines()
+          message = "\n".join(lines[-80:])
+          message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=pytest failure::{message}")
+          PY
+            rm -f pytest.log
+            exit "${status}"
+          fi
+          rm -f pytest.log
       - run: pip-audit -r requirements.txt --progress-spinner=off
       - run: docker compose config --quiet
       - run: docker build -t dedicated-server-save-sync:test .
