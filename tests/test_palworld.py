@@ -68,17 +68,18 @@ def test_backup_status_reports_pending_failure_and_completion(app):
     assert unknown["state"] == "unknown"
 
     connect = app.extensions["save_sync_connect"]
+    fresh_started = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     with connect() as db:
         db.execute(
             "INSERT INTO pending_backups(version,started_at) VALUES(?,?)",
-            (1, "2026-08-12T10:00:00Z"),
+            (1, fresh_started),
         )
     pending = client.get(endpoint, headers=auth()).get_json()
     assert pending["state"] == "pending"
     assert pending["pending"] is True
     assert pending["stalePending"] is False
     assert pending["pendingVersions"] == [
-        {"version": 1, "startedAt": "2026-08-12T10:00:00Z"}
+        {"version": 1, "startedAt": fresh_started}
     ]
     assert pending["stalePendingVersions"] == []
 
