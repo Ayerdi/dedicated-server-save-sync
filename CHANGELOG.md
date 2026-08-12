@@ -2,6 +2,10 @@
 
 ## Sin publicar
 
+Sin cambios pendientes.
+
+## 2.2.1
+
 - Endurece la publicación pública sin cambiar el protocolo del cliente ni el
   formato de los saves.
 - La instalación de producción fija explícitamente backend y cliente a la misma
@@ -35,6 +39,14 @@
   SQLite y retención correcta al finalizar.
 - `config/deploy.sh` exige backend y supervisor healthy antes de publicar la
   ruta Traefik; rollback detiene ambos sin borrar datos.
+- La retención de backend y supervisor confirma primero la metadata en SQLite y
+  solo después revalida referencias y elimina ZIPs físicos, evitando que un
+  rollback pueda dejar metadata apuntando a un fichero ya borrado.
+- El supervisor rechaza esquemas SQLite distintos de la versión soportada,
+  degrada healthcheck si hay cola pendiente sin comando configurado y termina
+  el process-group completo con escalado `SIGTERM` → `SIGKILL`.
+- Amplía CI con regresiones de crash-safety y un E2E que demuestra continuidad
+  del backup al caer web y reintento durable al caer el propio supervisor.
 
 ## 2.2.0
 
