@@ -269,6 +269,18 @@ marcador de esa versión está vencido (`started_at < ahora - (timeout + 60s)`).
 En ese caso `stalePending` es `true`, el marcador aparece en
 `stalePendingVersions` y no se cuenta como pendiente activo.
 
+`enabled` representa la configuración **actual** del hook y es independiente
+del resultado histórico de la versión vigente. Por ejemplo, una versión que
+se respaldó correctamente puede seguir devolviendo `state="completed"` y
+`latestVersionBackedUp=true` después de desactivar el hook, mientras
+`enabled=false` advierte que las publicaciones siguientes ya no lanzarán el
+backup automático. Los clientes deben mostrar ambas dimensiones por separado.
+
+`lastAttempt`, `lastCompleted` y el resultado de la versión vigente se obtienen
+recorriendo la auditoría en orden descendente hasta encontrar los registros
+válidos necesarios; no se pierden éxitos antiguos por un límite fijo de 500
+eventos.
+
 `latestVersionBackedUp=true` significa que el hook de la versión vigente
 terminó con éxito y ese resultado quedó auditado. El endpoint no consulta el
 repositorio restic ni verifica que el snapshot siga existiendo en el momento
