@@ -4,7 +4,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "config" / "render_route.py"
 TEMPLATE = ROOT / "config" / "save-sync.yml.template"
@@ -85,6 +84,7 @@ def test_route_renderer_rejects_game_key_mismatch(tmp_path):
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode != 0
 
