@@ -11,6 +11,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from save_sync.app import SCHEMA_VERSION
 from save_sync.retention import (
     prune_canonical_versions_locked,
     reconcile_unreferenced_files_locked,
@@ -86,6 +87,7 @@ class BackupSupervisor:
         self.stop_requested = False
         self.current_process = None
         self._lock_descriptor = None
+        self._warned_disabled_pending = False
         self.heartbeat_path = self.storage / "temporary" / "backup-supervisor.heartbeat"
         if self.timeout_seconds < 1:
             raise RuntimeError("SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS debe ser >= 1")
@@ -129,8 +131,11 @@ class BackupSupervisor:
         return connect_database(self.db_path)
 
     def schema_ready(self):
+        if not Path(self.db_path).is_file():
+            return False
         try:
             with self.connect() as db:
+                schema_version = db.execute("PRAGMA user_version").fetchone()[0]
                 names = {
                     row[0]
                     for row in db.execute(
@@ -138,9 +143,23 @@ class BackupSupervisor:
                         "AND name IN ('versions','users','audit','pending_backups')"
                     )
                 }
-            return names == {"versions", "users", "audit", "pending_backups"}
+            return schema_version == SCHEMA_VERSION and names == {
+                "versions",
+                "users",
+                "audit",
+                "pending_backups",
+            }
         except sqlite3.Error:
             return False
+
+    def pending_work_exists(self):
+        if not self.schema_ready():
+            return False
+        with self.connect() as db:
+            return (
+                db.execute("SELECT 1 FROM pending_backups LIMIT 1").fetchone()
+                is not None
+            )
 
     def touch_heartbeat(self):
         self.heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
@@ -278,19 +297,25 @@ class BackupSupervisor:
             )
 
     def terminate_process_group(self, process, sigterm_timeout=10, sigkill_timeout=10):
-        try:
-            pgid = os.getpgid(process.pid)
-        except (ProcessLookupError, PermissionError):
-            return
+        # Popen(start_new_session=True) crea una sesión cuyo PGID es el PID del
+        # líder. Conservar ese PGID permite matar descendientes aunque el líder
+        # ya haya salido y os.getpgid(pid) deje de poder resolverlo.
+        pgid = process.pid
         try:
             os.killpg(pgid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             return
         try:
             process.wait(timeout=sigterm_timeout)
-            return
         except subprocess.TimeoutExpired:
             pass
+
+        # El líder puede haber terminado limpiamente mientras un nieto ignora
+        # SIGTERM. Se sondea el grupo completo antes de decidir que ha acabado.
+        try:
+            os.killpg(pgid, 0)
+        except (ProcessLookupError, PermissionError):
+            return
         try:
             os.killpg(pgid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
@@ -299,7 +324,8 @@ class BackupSupervisor:
             process.wait(timeout=sigkill_timeout)
         except subprocess.TimeoutExpired:
             self.logger.warning(
-                "El proceso de backup (pid %s) no terminó tras SIGKILL", process.pid
+                "El process-group de backup (pgid %s) no terminó tras SIGKILL",
+                pgid,
             )
 
     def wait_for_process(self, process):
@@ -327,13 +353,17 @@ class BackupSupervisor:
             return False
         job = self.next_job()
         if job is None:
+            self._warned_disabled_pending = False
             return False
         if not self.command:
-            self.logger.warning(
-                "Hay un backup pendiente (v%s) pero SAVE_SYNC_POST_PUBLISH_COMMAND está vacío",
-                job["version"],
-            )
+            if not self._warned_disabled_pending:
+                self.logger.warning(
+                    "Hay backups pendientes pero SAVE_SYNC_POST_PUBLISH_COMMAND está vacío; "
+                    "el supervisor se marcará unhealthy hasta resolver la cola"
+                )
+                self._warned_disabled_pending = True
             return False
+        self._warned_disabled_pending = False
         if not self.mark_attempt_started(job):
             return True
 
@@ -437,8 +467,12 @@ def healthcheck():
         age = time.time() - supervisor.heartbeat_path.stat().st_mtime
         if age > max(10.0, supervisor.poll_seconds * 5):
             return False
-        return supervisor.schema_ready()
-    except (OSError, RuntimeError, ValueError):
+        if not supervisor.schema_ready():
+            return False
+        if not supervisor.command and supervisor.pending_work_exists():
+            return False
+        return True
+    except (OSError, RuntimeError, ValueError, sqlite3.Error):
         return False
 
 
