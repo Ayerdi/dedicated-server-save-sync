@@ -224,6 +224,47 @@ DELETE /admin/tokens/{id}
 GET    /admin/audit?limit=100
 ```
 
+### Estado del backup externo
+
+```http
+GET /backup-status
+```
+
+Devuelve el estado operativo del hook para que clientes y panel puedan
+responder si la versión vigente está realmente respaldada:
+
+```json
+{
+  "enabled": true,
+  "state": "completed",
+  "latestPublishedVersion": 13,
+  "latestVersionBackedUp": true,
+  "pending": false,
+  "pendingVersions": [],
+  "lastAttempt": {
+    "version": 13,
+    "completedAt": "2026-08-12T10:00:00Z",
+    "success": true,
+    "exitCode": 0,
+    "timedOut": false,
+    "reason": null
+  },
+  "lastCompleted": {
+    "version": 13,
+    "completedAt": "2026-08-12T10:00:00Z",
+    "success": true,
+    "exitCode": 0,
+    "timedOut": false,
+    "reason": null
+  }
+}
+```
+
+`state` puede ser `not_initialized`, `disabled`, `pending`, `completed`,
+`failed` o `unknown`. `unknown` indica que el hook está habilitado pero no hay
+marcador ni resultado auditable para la versión vigente; debe investigarse, no
+interpretarse como éxito. Requiere autenticación, pero no rol administrador.
+
 Restaurar crea una versión creciente y conserva `saveIdentity`.
 
 ## Ejemplos `curl`

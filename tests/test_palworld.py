@@ -2,6 +2,7 @@ import concurrent.futures
 import hashlib
 import hmac
 import io
+import json
 from datetime import datetime, timedelta, timezone
 
 from conftest import acquire, auth, initialize, upload, zip_bytes
@@ -39,6 +40,80 @@ def test_palworld_legacy_api_alias_remains_available(client):
     assert response.status_code == 200
     assert response.get_json()["gameKey"] == "palworld"
     assert response.get_json()["worldGuid"] is None
+
+
+def test_backup_status_requires_auth_and_reports_disabled_state(client):
+    endpoint = "/api/games/palworld/backup-status"
+    assert client.get(endpoint).status_code == 401
+
+    empty = client.get(endpoint, headers=auth()).get_json()
+    assert empty["state"] == "not_initialized"
+    assert empty["latestPublishedVersion"] == 0
+    assert empty["latestVersionBackedUp"] is False
+
+    initialize(client)
+    disabled = client.get(endpoint, headers=auth()).get_json()
+    assert disabled["enabled"] is False
+    assert disabled["state"] == "disabled"
+    assert disabled["latestPublishedVersion"] == 1
+
+
+def test_backup_status_reports_pending_failure_and_completion(app):
+    client = app.test_client()
+    initialize(client)
+    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = "restic backup /data/save-sync"
+    endpoint = "/api/games/palworld/backup-status"
+
+    unknown = client.get(endpoint, headers=auth()).get_json()
+    assert unknown["state"] == "unknown"
+
+    connect = app.extensions["save_sync_connect"]
+    with connect() as db:
+        db.execute(
+            "INSERT INTO pending_backups(version,started_at) VALUES(?,?)",
+            (1, "2026-08-12T10:00:00Z"),
+        )
+    pending = client.get(endpoint, headers=auth()).get_json()
+    assert pending["state"] == "pending"
+    assert pending["pending"] is True
+    assert pending["pendingVersions"] == [
+        {"version": 1, "startedAt": "2026-08-12T10:00:00Z"}
+    ]
+
+    with connect() as db:
+        db.execute("DELETE FROM pending_backups WHERE version=1")
+        db.execute(
+            "INSERT INTO audit(event,at,success,details) VALUES(?,?,?,?)",
+            (
+                "backup_hook_failed",
+                "2026-08-12T10:01:00Z",
+                0,
+                json.dumps(
+                    {"version": 1, "exitCode": 12, "timedOut": 0}
+                ),
+            ),
+        )
+    failed = client.get(endpoint, headers=auth()).get_json()
+    assert failed["state"] == "failed"
+    assert failed["latestVersionBackedUp"] is False
+    assert failed["lastAttempt"]["exitCode"] == 12
+    assert failed["lastCompleted"] is None
+
+    with connect() as db:
+        db.execute(
+            "INSERT INTO audit(event,at,success,details) VALUES(?,?,?,?)",
+            (
+                "backup_hook_completed",
+                "2026-08-12T10:02:00Z",
+                1,
+                json.dumps({"version": 1, "exitCode": 0, "timedOut": 0}),
+            ),
+        )
+    completed = client.get(endpoint, headers=auth()).get_json()
+    assert completed["state"] == "completed"
+    assert completed["latestVersionBackedUp"] is True
+    assert completed["lastAttempt"] == completed["lastCompleted"]
+    assert completed["lastCompleted"]["completedAt"] == "2026-08-12T10:02:00Z"
 
 
 def test_04_second_user_lock_is_conflict(client):
