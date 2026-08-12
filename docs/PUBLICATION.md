@@ -20,16 +20,30 @@ debe contener saves, secretos ni datos del despliegue real.
 - [x] Scripts de publicación exigen checkout limpio, `main`, `HEAD == origin/main`
   y CI verde para el SHA exacto.
 - [x] Release v2.2.1 calibrada en CI con doble build reproducible.
-- [ ] Release v2.2.1 publicada y verificada con el digest fijado abajo.
+- [x] Release v2.2.1 publicada y verificada con target, assets y digest exactos.
+- [x] Workflow one-shot de publicación retirado después de crear la release.
 - [ ] Visibilidad GitHub cambiada de `private` a `public`.
 - [ ] Configuración post-publicación aplicada con
   `scripts/configure-public-repository.sh --apply`.
 - [ ] Wiki inicializada en GitHub y sincronizada con `scripts/publish-wiki.sh --apply`.
 
-El ZIP candidato v2.2.1 debe publicar exactamente este digest GitHub:
+La release `v2.2.1` fue publicada desde:
+
+```text
+65b5d8c4b6c80b0560a712c87ddee5c4e76cbaec
+```
+
+Su ZIP publicado tiene exactamente este digest GitHub:
 
 ```text
 sha256:4ee67ecdb617374c74f39db3819d6a6dae50618111102fa8a196c3f2beceacfc
+```
+
+Assets esperados y verificados:
+
+```text
+dedicated-server-save-sync-client-v2.2.1.zip
+dedicated-server-save-sync-client-v2.2.1.zip.sha256
 ```
 
 El script post-publicación resuelve el commit del tag `v2.2.1`, exige que la
