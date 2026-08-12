@@ -16,9 +16,12 @@ vulnerability** de GitHub Security Advisories:
 
 Incluye versión, impacto, pasos mínimos y mitigaciones conocidas, pero no
 adjuntes saves, tokens ni configuraciones reales. Los mantenedores confirmarán
-la recepción y coordinarán la divulgación cuando exista una corrección. El canal
-estará disponible al habilitar Private Vulnerability Reporting antes de hacer
-público el repositorio.
+la recepción y coordinarán la divulgación cuando exista una corrección.
+
+Private Vulnerability Reporting se habilita **inmediatamente después** de
+cambiar el repositorio a público mediante
+`scripts/configure-public-repository.sh --apply`. Hasta completar ese paso no
+uses una incidencia pública para información sensible.
 
 ## Datos que nunca deben versionarse
 

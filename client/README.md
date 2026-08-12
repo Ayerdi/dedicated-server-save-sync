@@ -5,15 +5,34 @@
 `adapters/<adapter>/Adapter.ps1`. Toda diferencia por equipo vive en
 `config.json` y en los secretos DPAPI.
 
+> **Alcance estable:** la release de producto `v2.2.0` soporta Palworld. Las
+> abstracciones de adaptador se conservan porque forman parte de la arquitectura,
+> pero nuevos juegos y el rediseño multi-juego quedan fuera del roadmap de
+> mantenimiento de este repositorio.
+
+## Versiones
+
+Hay dos números distintos de forma deliberada:
+
+- `v2.2.0`: release del **producto** (backend, cliente empaquetado, docs y
+  proceso de publicación);
+- `clientVersion=1.2.0`: versión del **adaptador/cliente Palworld** que se
+  registra en el manifest del ZIP y en mensajes de diagnóstico.
+
+El backend no decide compatibilidad a partir de `clientVersion`. Para producción
+usa backend y paquete de cliente procedentes de la misma release estable del
+producto.
+
 ## Instalación
 
-1. Copiar esta carpeta a una ruta local estable.
-2. Copiar `config.example.json` como `config.json`.
-3. Ajustar `Adapter`, `GameKey`, `PlayerName`, `ClientId`, URL y rutas del juego.
-4. Habilitar la REST API de Palworld solo en localhost y configurar su
+1. Descargar el ZIP y su `.sha256` desde la release estable y verificar el hash.
+2. Extraer el paquete a una ruta local estable.
+3. Copiar `config.example.json` como `config.json`.
+4. Ajustar `Adapter`, `GameKey`, `PlayerName`, `ClientId`, URL y rutas del juego.
+5. Habilitar la REST API de Palworld solo en localhost y configurar su
    `AdminPassword`.
-5. Ejecutar `Configurar-secretos.cmd`.
-6. Ejecutar `Probar-conexion.cmd`.
+6. Ejecutar `Configurar-secretos.cmd`.
+7. Ejecutar `Probar-conexion.cmd`.
 
 No copiar `data/secrets.json` entre equipos. DPAPI lo liga al usuario y equipo
 que lo creó.
@@ -22,7 +41,7 @@ que lo creó.
 
 - `PlayerName`: debe coincidir con el nombre mostrado configurado en el backend.
 - `ClientId`: identificador estable y no secreto del equipo.
-- `Adapter`: carpeta de integración, actualmente `palworld`.
+- `Adapter`: carpeta de integración; la release estable incluye `palworld`.
 - `GameKey`: debe coincidir con `adapter.json` y el backend desplegado.
 - `ApiBaseUrl`: termina en `/api/games/<gameKey>` y debe usar HTTPS.
 - `PalServerRoot` y `PalServerExecutable`: instalación dedicada.
@@ -34,9 +53,9 @@ que lo creó.
 - `HeartbeatSeconds`: debe ser claramente menor que el TTL del backend.
 - `LocalBackupRetention`: ZIP locales conservados por el cliente.
 
-Los campos restantes del ejemplo pertenecen al adaptador Palworld. Otro
-adaptador debe documentar su propia configuración y no reutilizar campos sin
-semántica equivalente.
+Los campos restantes del ejemplo pertenecen al adaptador Palworld. La
+abstracción de adaptadores se documenta como referencia técnica, no como promesa
+de soporte para otros títulos en esta release.
 
 ## Uso de Palworld
 

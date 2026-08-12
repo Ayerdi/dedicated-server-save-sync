@@ -2,27 +2,38 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
           cache: pip
       - run: pip install --require-hashes -r requirements-dev.txt
+      - name: Verificar scripts Bash
+        run: bash -n scripts/*.sh config/*.sh
       - name: Verificar locks reproducibles
         run: |
           pip-compile --generate-hashes --strip-extras --output-file=requirements.txt requirements.in
           pip-compile --allow-unsafe --generate-hashes --strip-extras --output-file=requirements-dev.txt requirements-dev.in
           git diff --exit-code -- requirements.txt requirements-dev.txt
-      - run: ruff check save_sync tests wsgi.py
+      - run: ruff check save_sync tests wsgi.py scripts/check-docs.py
       - run: python scripts/check-docs.py
       - run: python -m pytest -q
       - run: pip-audit -r requirements.txt --progress-spinner=off
@@ -32,8 +43,11 @@ jobs:
 
   powershell:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Instalar Pester
         shell: powershell
         run: Install-Module Pester -RequiredVersion 5.9.0 -Force -SkipPublisherCheck -Scope CurrentUser
@@ -43,15 +57,20 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: bash scripts/local-e2e.sh
 
   secrets:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Instalar y ejecutar Gitleaks sin artefactos
         run: bash scripts/run-gitleaks.sh

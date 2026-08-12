@@ -9,23 +9,47 @@ if [[ "${1:-}" != "--apply" || $# -ne 1 ]]; then
   exit 2
 fi
 
-command -v gh >/dev/null
-command -v git >/dev/null
+command -v gh >/dev/null || { printf 'Falta GitHub CLI (gh).\n' >&2; exit 1; }
+command -v git >/dev/null || { printf 'Falta git.\n' >&2; exit 1; }
+cd "${ROOT_DIR}"
 
-[[ -d "${ROOT_DIR}/wiki" ]] || {
-  printf 'Falta el directorio wiki/.\n' >&2
+gh auth status >/dev/null 2>&1 || {
+  printf 'GitHub CLI no tiene una sesión válida. Ejecuta gh auth login.\n' >&2
+  exit 1
+}
+[[ -d wiki ]] || { printf 'Falta el directorio wiki/.\n' >&2; exit 1; }
+[[ -z "$(git status --short)" ]] || {
+  printf 'El árbol Git debe estar limpio; la Wiki nunca publica cambios no committeados.\n' >&2
+  exit 1
+}
+[[ "$(git branch --show-current)" == "main" ]] || {
+  printf 'Sincroniza la Wiki desde main.\n' >&2
   exit 1
 }
 
-visibility="$(gh repo view "${REPOSITORY}" --json visibility --jq .visibility)"
-if [[ "${visibility}" != "PUBLIC" ]]; then
-  printf 'La wiki pública se sincroniza únicamente después de abrir el repositorio.\n' >&2
+git fetch --quiet origin main
+head_sha="$(git rev-parse HEAD)"
+remote_sha="$(git rev-parse origin/main)"
+if [[ "${head_sha}" != "${remote_sha}" ]]; then
+  printf 'HEAD no coincide con origin/main. Actualiza el checkout antes de publicar la Wiki.\n' >&2
   exit 1
 fi
 
-wiki_enabled="$(
-  gh repo view "${REPOSITORY}" --json hasWikiEnabled --jq .hasWikiEnabled
-)"
+ci_state="$(gh run list --repo "${REPOSITORY}" --workflow ci.yml --branch main --limit 1 \
+  --json headSha,status,conclusion \
+  --jq '.[0] | (.headSha // "") + ":" + (.status // "") + ":" + (.conclusion // "")')"
+if [[ "${ci_state}" != "${head_sha}:completed:success" ]]; then
+  printf 'La CI de main no está verde para el HEAD actual (%s).\n' "${ci_state:-sin ejecución}" >&2
+  exit 1
+fi
+
+visibility="$(gh repo view "${REPOSITORY}" --json visibility --jq .visibility)"
+if [[ "${visibility}" != "PUBLIC" ]]; then
+  printf 'La Wiki pública se sincroniza únicamente después de abrir el repositorio.\n' >&2
+  exit 1
+fi
+
+wiki_enabled="$(gh repo view "${REPOSITORY}" --json hasWikiEnabled --jq .hasWikiEnabled)"
 if [[ "${wiki_enabled}" != "true" ]]; then
   printf 'Activa la Wiki del repositorio antes de sincronizarla.\n' >&2
   exit 1
@@ -46,9 +70,8 @@ EOF
   exit 1
 fi
 
-find "${TEMP_DIR}/repo" -mindepth 1 -maxdepth 1 \
-  -type f \( -name '*.md' -o -name '_Sidebar.md' -o -name '_Footer.md' \) -delete
-cp "${ROOT_DIR}"/wiki/*.md "${TEMP_DIR}/repo/"
+find "${TEMP_DIR}/repo" -mindepth 1 -maxdepth 1 -type f -name '*.md' -delete
+cp wiki/*.md "${TEMP_DIR}/repo/"
 
 cd "${TEMP_DIR}/repo"
 git add --all
@@ -57,9 +80,11 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
-git -c user.name='Ayerdi' \
-    -c user.email='128999164+Ayerdi@users.noreply.github.com' \
+git_user="$(gh api user --jq .login)"
+git_user_id="$(gh api user --jq .id)"
+git -c user.name="${git_user}" \
+    -c user.email="${git_user_id}+${git_user}@users.noreply.github.com" \
     commit --quiet -m 'docs: sync public wiki'
 git push --quiet origin HEAD
 
-printf 'Wiki sincronizada desde wiki/.\n'
+printf 'Wiki sincronizada desde el commit %s de main.\n' "${head_sha}"

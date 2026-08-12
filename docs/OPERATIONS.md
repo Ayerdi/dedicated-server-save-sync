@@ -1,5 +1,10 @@
 # Despliegue y operación
 
+> **Ámbito de esta release:** `v2.2.0` se soporta como referencia estable de
+> Palworld. Las variables genéricas y el aislamiento por `gameKey` forman parte
+> de la arquitectura existente; las notas sobre otros juegos son referencia
+> técnica y no una promesa de soporte ni un roadmap activo.
+
 ## Preparación
 
 1. Crear una red Docker compartida con Traefik si no existe:
@@ -132,10 +137,12 @@ El script valida que `SAVE_SYNC_GAME_KEY` coincida con
 `config/games/<gameKey>.json`. Los nombres de proyecto, contenedor, alias de red
 y ruta Traefik incorporan el juego para no colisionar.
 
-### Un juego adicional
+### Referencia: aislamiento de otra instancia de juego
 
-Usar otro checkout o directorio de despliegue con su propio `.env`. Cambiar al
-menos:
+Esta sección documenta la capacidad arquitectónica heredada; **no convierte
+`example-game` ni otros títulos en integraciones soportadas por v2.2.0**. Para
+experimentación técnica, otro checkout/directorio debe usar `.env`, volumen y
+proyecto Compose independientes, por ejemplo:
 
 ```dotenv
 SAVE_SYNC_GAME_KEY=example-game
@@ -143,8 +150,9 @@ SAVE_SYNC_HOST_STORAGE_PATH=/srv/save-sync/example-game
 SAVE_SYNC_COMPOSE_PROJECT=save-sync-example-game
 ```
 
-Añadir `config/games/example-game.json` y el adaptador Windows correspondiente.
-No compartir base de datos ni directorio de almacenamiento entre juegos.
+También requeriría `config/games/example-game.json` y un adaptador probado. No
+compartir base de datos ni directorio de almacenamiento entre juegos. Consulta
+[ADAPTING-OTHER-GAMES.md](ADAPTING-OTHER-GAMES.md) como referencia de diseño.
 
 Para una validación sin infraestructura externa consulta
 [LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md). Ese modo enlaza solo localhost y
