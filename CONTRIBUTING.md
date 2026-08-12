@@ -44,6 +44,10 @@ Invoke-Pester -Path .\client -CI
 Los commits deben ser pequeños y usar mensajes convencionales, por ejemplo
 `fix: reject stale upload` o `feat: add example-game adapter`.
 
+Salvo que se indique expresamente lo contrario, toda contribución enviada para
+su inclusión se licencia bajo [Apache-2.0](LICENSE), conforme a la sección 5 de
+la licencia.
+
 ## Dependencias
 
 Edita `requirements.in` o `requirements-dev.in` y regenera los locks:

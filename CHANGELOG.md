@@ -2,6 +2,7 @@
 
 ## 2.0.0
 
+- Adopta Apache License 2.0 para código y documentación.
 - Actualiza Flask a 3.1.3 por la corrección de seguridad de la rama 3.1.
 - Bloquea dependencias transitivas con hashes y añade `pip-audit` y cobertura.
 - Añade E2E Docker aislado, modo API-only y `certResolver` parametrizable.

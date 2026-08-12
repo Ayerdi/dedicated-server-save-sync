@@ -290,3 +290,9 @@ Consulta [SECURITY.md](SECURITY.md) antes de publicar cambios.
 - [Handoff para otro agente](docs/AGENT-HANDOFF.md)
 - [Seguridad](SECURITY.md)
 - [Cambios](CHANGELOG.md)
+
+## Licencia
+
+El código y la documentación de este repositorio se distribuyen bajo la
+[Apache License 2.0](LICENSE). La licencia del proyecto no concede derechos
+sobre Palworld ni sobre ninguna otra marca, juego o contenido guardado.
