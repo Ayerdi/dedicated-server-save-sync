@@ -19,7 +19,6 @@ services:
       timeout: 5s
       retries: 3
     environment:
-      # restic necesita un cache dir escribible; el root fs es read_only.
       RESTIC_CACHE_DIR: /data/save-sync/temporary
     security_opt:
       - no-new-privileges:true
@@ -28,6 +27,33 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64m,noexec,nosuid,nodev
+
+  backup-supervisor:
+    container_name: ${SAVE_SYNC_BACKUP_CONTAINER_NAME:-save_sync_palworld_backup}
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "save_sync.backup_supervisor"]
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ${SAVE_SYNC_HOST_STORAGE_PATH:-./data}:/data/save-sync
+    environment:
+      RESTIC_CACHE_DIR: /data/save-sync/temporary
+    healthcheck:
+      test: ["CMD", "python", "-m", "save_sync.backup_supervisor", "--healthcheck"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 6
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    stop_grace_period: 30s
 
 networks:
   traefik_proxy:
