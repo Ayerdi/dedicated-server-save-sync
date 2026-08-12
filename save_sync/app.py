@@ -764,37 +764,41 @@ def create_app(config=None):
                 is_stale = True
             (stale_pending if is_stale else pending).append(item)
 
-        attempts = []
+        last_attempt = None
+        last_completed = None
+        current_attempt = None
         rows = db.execute(
             "SELECT event,at,success,details FROM audit "
             "WHERE event IN ('backup_hook_completed','backup_hook_failed') "
-            "ORDER BY id DESC LIMIT 500"
-        ).fetchall()
+            "ORDER BY id DESC"
+        )
         for row in rows:
             try:
                 details = json.loads(row["details"])
                 version = int(details["version"])
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 continue
-            attempts.append(
-                {
-                    "version": version,
-                    "completedAt": row["at"],
-                    "success": bool(row["success"]),
-                    "exitCode": details.get("exitCode"),
-                    "timedOut": bool(details.get("timedOut", False)),
-                    "reason": details.get("reason"),
-                }
-            )
+            attempt = {
+                "version": version,
+                "completedAt": row["at"],
+                "success": bool(row["success"]),
+                "exitCode": details.get("exitCode"),
+                "timedOut": bool(details.get("timedOut", False)),
+                "reason": details.get("reason"),
+            }
+            if last_attempt is None:
+                last_attempt = attempt
+            if last_completed is None and attempt["success"]:
+                last_completed = attempt
+            if current_attempt is None and version == latest_version:
+                current_attempt = attempt
+            if (
+                last_attempt is not None
+                and last_completed is not None
+                and (current_attempt is not None or not current)
+            ):
+                break
 
-        last_attempt = attempts[0] if attempts else None
-        last_completed = next(
-            (attempt for attempt in attempts if attempt["success"]), None
-        )
-        current_attempt = next(
-            (attempt for attempt in attempts if attempt["version"] == latest_version),
-            None,
-        )
         current_pending = any(
             item["version"] == latest_version for item in pending
         )
@@ -1897,8 +1901,8 @@ def create_app(config=None):
 
 
 PANEL_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>__GAME__ · Save Sync</title><style>
-:root{color-scheme:dark;font-family:system-ui;background:#10141b;color:#eef2f8}body{max-width:980px;margin:3rem auto;padding:0 1rem}header,.card{background:#19212d;border:1px solid #344154;border-radius:14px;padding:1.2rem;margin:1rem 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.8rem}.label{color:#9eabc0;font-size:.85rem}.value{font-size:1.1rem;overflow-wrap:anywhere}button,a.button{background:#5b7cfa;color:white;border:0;border-radius:8px;padding:.7rem 1rem;text-decoration:none;cursor:pointer}.busy,.backup-pending{color:#ffbf69}.free,.backup-completed{color:#72dfa1}.backup-failed,.backup-unknown{color:#ff7b86}.backup-disabled,.backup-not_initialized{color:#9eabc0}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.55rem;border-bottom:1px solid #344154}code{font-size:.78rem}</style></head><body>
-<header><h1>Sincronización __GAME__</h1><div>Usuario: __USER__ · Rol: __ROLE__</div></header><section class="card"><h2 id="state">Cargando…</h2><div class="grid" id="facts"></div><p id="lock"></p><a class="button" href="__WEB_API_PREFIX__/download">Descargar última versión</a> <button id="force" hidden>Forzar desbloqueo</button></section><section class="card"><h2>Backup externo</h2><div class="grid" id="backupFacts"></div><p id="backupState">Cargando…</p></section><section class="card"><h2>Historial</h2><table><thead><tr><th>Versión</th><th>__IDENTITY_LABEL__</th><th>Usuario</th><th>Fecha</th><th>Tamaño</th><th>SHA-256</th><th>Acciones</th></tr></thead><tbody id="history"></tbody></table></section><section class="card" id="tokensCard" hidden><h2>Tokens API</h2><p>El token nuevo se muestra una sola vez.</p><input id="tokenUser" placeholder="Usuario autorizado"><input id="tokenName" placeholder="Nombre del ordenador"><button id="createToken">Crear token</button><pre id="newToken"></pre><div id="tokens"></div></section>
+:root{color-scheme:dark;font-family:system-ui;background:#10141b;color:#eef2f8}body{max-width:980px;margin:3rem auto;padding:0 1rem}header,.card{background:#19212d;border:1px solid #344154;border-radius:14px;padding:1.2rem;margin:1rem 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.8rem}.label{color:#9eabc0;font-size:.85rem}.value{font-size:1.1rem;overflow-wrap:anywhere}button,a.button{background:#5b7cfa;color:white;border:0;border-radius:8px;padding:.7rem 1rem;text-decoration:none;cursor:pointer}.busy,.backup-pending,.backup-warning{color:#ffbf69}.free,.backup-completed{color:#72dfa1}.backup-failed,.backup-unknown{color:#ff7b86}.backup-disabled,.backup-not_initialized{color:#9eabc0}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.55rem;border-bottom:1px solid #344154}code{font-size:.78rem}</style></head><body>
+<header><h1>Sincronización __GAME__</h1><div>Usuario: __USER__ · Rol: __ROLE__</div></header><section class="card"><h2 id="state">Cargando…</h2><div class="grid" id="facts"></div><p id="lock"></p><a class="button" href="__WEB_API_PREFIX__/download">Descargar última versión</a> <button id="force" hidden>Forzar desbloqueo</button></section><section class="card"><h2>Backup externo</h2><div class="grid" id="backupFacts"></div><p id="backupConfig">Cargando…</p><p id="backupState">Cargando…</p></section><section class="card"><h2>Historial</h2><table><thead><tr><th>Versión</th><th>__IDENTITY_LABEL__</th><th>Usuario</th><th>Fecha</th><th>Tamaño</th><th>SHA-256</th><th>Acciones</th></tr></thead><tbody id="history"></tbody></table></section><section class="card" id="tokensCard" hidden><h2>Tokens API</h2><p>El token nuevo se muestra una sola vez.</p><input id="tokenUser" placeholder="Usuario autorizado"><input id="tokenName" placeholder="Nombre del ordenador"><button id="createToken">Crear token</button><pre id="newToken"></pre><div id="tokens"></div></section>
 <script>
 const csrf='__CSRF__',role='__ROLE__';
 const headers={'X-CSRF-Token':csrf,'Content-Type':'application/json'};
@@ -1914,12 +1918,14 @@ async function load(){
  if(b){
   const labels={completed:'Completado',pending:'Pendiente',failed:'Fallido',unknown:'Sin resultado',disabled:'Desactivado',not_initialized:'Sin partida'};
   const stateLabel=b.stalePending&&b.state==='unknown'?'Sin resultado (marcador vencido)':labels[b.state]||b.state;
-  document.querySelector('#backupState').textContent=`Estado: ${stateLabel}`;document.querySelector('#backupState').className=`backup-${b.state}`;
+  document.querySelector('#backupConfig').textContent=`Backup automático: ${b.enabled?'activado':'desactivado ⚠'}`;document.querySelector('#backupConfig').className=b.enabled?'backup-completed':'backup-warning';
+  document.querySelector('#backupState').textContent=`Estado de la versión actual: ${stateLabel}`;document.querySelector('#backupState').className=`backup-${b.state}`;
   const pendingVersions=Array.isArray(b.pendingVersions)?b.pendingVersions:[];
   const staleVersions=Array.isArray(b.stalePendingVersions)?b.stalePendingVersions:[];
   document.querySelector('#backupFacts').innerHTML=[['Última versión publicada',b.latestPublishedVersion||'—'],['Última versión respaldada',b.lastCompleted?.version||'—'],['Último backup completado',b.lastCompleted?.completedAt||'—'],['Último exitCode',b.lastAttempt?.exitCode??'—'],['Pendientes',pendingVersions.map(x=>x.version).join(', ')||'Ninguno'],['Marcadores vencidos',staleVersions.map(x=>x.version).join(', ')||'Ninguno'],['Versión actual respaldada',b.latestVersionBackedUp?'Sí':'No']].map(x=>`<div><div class=label>${esc(x[0])}</div><div class=value>${esc(x[1])}</div></div>`).join('');
  }else{
-  document.querySelector('#backupState').textContent='Estado: no disponible';document.querySelector('#backupState').className='backup-unknown';document.querySelector('#backupFacts').innerHTML='';
+  document.querySelector('#backupConfig').textContent='Backup automático: no disponible';document.querySelector('#backupConfig').className='backup-unknown';
+  document.querySelector('#backupState').textContent='Estado de la versión actual: no disponible';document.querySelector('#backupState').className='backup-unknown';document.querySelector('#backupFacts').innerHTML='';
  }
  document.querySelector('#history').innerHTML=h.versions.map(v=>{const id=safeInt(v.version);return `<tr><td>${id}</td><td><code>${esc(v.saveIdentity)}</code></td><td>${esc(v.updatedBy)}</td><td>${esc(v.updatedAt)}</td><td>${esc(v.size)}</td><td><code>${esc(v.sha256)}</code></td><td>${role==='admin'?`<a href=__WEB_API_PREFIX__/history/${id}/download>Descargar</a> <button onclick=restoreV(${id})>Restaurar</button>`:''}</td></tr>`}).join('');
  document.querySelector('#force').hidden=role!=='admin'||!s.locked;if(role==='admin')loadTokens()
