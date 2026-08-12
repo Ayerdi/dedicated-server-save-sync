@@ -99,13 +99,30 @@ el único proceso que consume esa cola en producción. Para cada intento:
 4. aplica el timeout configurado y termina el grupo con SIGTERM/SIGKILL si hace
    falta;
 5. en una única transacción, elimina la fila, audita
-   `backup_hook_completed`/`backup_hook_failed` y reaplica retención.
+   `backup_hook_completed`/`backup_hook_failed`, aplica la retención de
+   **metadata** y confirma SQLite;
+6. en una segunda fase con un nuevo write-lock, vuelve a consultar las
+   referencias vigentes y elimina únicamente ZIPs que sigan huérfanos.
+
+Separar metadata y borrado físico evita una ventana de crash peligrosa: ningún
+ZIP se elimina antes del `COMMIT` que deja de referenciarlo. Si el proceso muere
+o el filesystem falla durante la segunda fase, puede quedar temporalmente un
+ZIP huérfano, pero nunca metadata confirmada apuntando a un ZIP eliminado por
+una transacción que después hizo rollback. El backend web usa la misma estrategia
+de dos fases para su cleanup de retención.
 
 La finalización es **at-least-once**. Si el supervisor o el contenedor mueren
 antes de confirmar esa transacción, la fila SQLite permanece y se vuelve a
 intentar tras el reinicio. Si una parada controlada llega durante un backup, el
 supervisor termina el hijo y conserva igualmente la fila. Por ello el comando
 de backup debe ser idempotente o tolerar repetición, como `restic backup`.
+
+`SAVE_SYNC_POST_PUBLISH_COMMAND` debe permanecer **en primer plano** hasta que
+el intento de backup haya terminado definitivamente. No uses un wrapper que
+lance el backup con `&`, `nohup`, un daemon externo o cualquier mecanismo que
+haga salir al proceso supervisado antes que el trabajo real. El supervisor
+puede aplicar timeout, SIGTERM/SIGKILL y determinar el resultado únicamente
+mientras el proceso real permanezca en el process-group que inició.
 
 Un exit code distinto de cero o un timeout ya observado sí se registra como
 fallo final de ese intento y libera la fila: no se reintenta indefinidamente un
@@ -143,7 +160,10 @@ docker compose ps backup-supervisor
 docker compose logs --tail=100 backup-supervisor
 ```
 
-Su healthcheck exige una heartbeat reciente y acceso válido al esquema SQLite.
+Su healthcheck exige una heartbeat reciente, `PRAGMA user_version` exactamente
+igual al esquema que soporta el binario y acceso a las tablas requeridas. Si
+existe trabajo en `pending_backups` pero `SAVE_SYNC_POST_PUBLISH_COMMAND` está
+vacío, el supervisor se marca **unhealthy** porque esa cola no puede progresar.
 `config/deploy.sh` no publica la ruta Traefik hasta que **backend y supervisor**
 están healthy.
 
