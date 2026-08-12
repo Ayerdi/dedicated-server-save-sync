@@ -9,6 +9,7 @@ RUNTIME_ROUTE=""
 PREVIOUS_ROUTE=""
 COMPOSE_PROJECT=""
 CONTAINER_NAME=""
+BACKUP_CONTAINER_NAME=""
 route_published=0
 had_previous=0
 
@@ -159,7 +160,9 @@ GAME_CONFIG_PATH="${PROJECT_DIR}/config/games/${GAME_KEY}.json"
 [[ -f "${GAME_CONFIG_PATH}" ]] || { log "Falta ${GAME_CONFIG_PATH}."; exit 1; }
 COMPOSE_PROJECT="${SAVE_SYNC_COMPOSE_PROJECT:-save-sync-${GAME_KEY}}"
 CONTAINER_NAME="save_sync_${GAME_KEY}"
+BACKUP_CONTAINER_NAME="save_sync_${GAME_KEY}_backup"
 export SAVE_SYNC_CONTAINER_NAME="${CONTAINER_NAME}"
+export SAVE_SYNC_BACKUP_CONTAINER_NAME="${BACKUP_CONTAINER_NAME}"
 RUNTIME_ROUTE="${RUNTIME_DIR}/save-sync-${GAME_KEY}.yml"
 PREVIOUS_ROUTE="${RUNTIME_DIR}/save-sync-${GAME_KEY}.previous.yml"
 TRAEFIK_ROUTE="${TRAEFIK_DYNAMIC_DIR}/save-sync-${GAME_KEY}.yml"
@@ -195,11 +198,17 @@ docker compose -p "${COMPOSE_PROJECT}" run --rm --no-deps --user 0 \
   --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER dedicated-server-save-sync \
   sh -eu -c 'mkdir -p /data/save-sync/backups /data/save-sync/temporary && chown -R 10001:10001 /data/save-sync && chmod 0700 /data/save-sync /data/save-sync/backups /data/save-sync/temporary'
 
-log "Levantando solamente Save Sync para ${GAME_KEY}."
+log "Levantando backend y supervisor durable para ${GAME_KEY}."
 docker compose -p "${COMPOSE_PROJECT}" up -d --wait
 
 health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "${CONTAINER_NAME}")"
 [[ "${health}" == "healthy" ]] || { log "El backend no esta healthy: ${health}."; exit 1; }
+backup_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' "${BACKUP_CONTAINER_NAME}")"
+[[ "${backup_health}" == "healthy" ]] || {
+  log "El supervisor de backup no esta healthy: ${backup_health}."
+  docker compose -p "${COMPOSE_PROJECT}" logs --no-color --tail=100 backup-supervisor >&2 || true
+  exit 1
+}
 
 if [[ -f "${TRAEFIK_ROUTE}" ]]; then
   install -m 0600 "${TRAEFIK_ROUTE}" "${PREVIOUS_ROUTE}"
@@ -218,4 +227,4 @@ sleep 2
 SAVE_SYNC_PUBLIC_BASE_URL="${PUBLIC_BASE_URL}" SAVE_SYNC_GAME_KEY="${GAME_KEY}" SAVE_SYNC_PANEL_MODE="${PANEL_MODE}" "${SCRIPT_DIR}/verify.sh"
 route_published=0
 trap - ERR
-log "Despliegue verificado. No se ha reiniciado la aplicacion anfitriona ni Traefik."
+log "Despliegue verificado. Backend y supervisor estan healthy; no se ha reiniciado Traefik."
