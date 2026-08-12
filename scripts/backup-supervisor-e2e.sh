@@ -136,11 +136,17 @@ publish_version "worker-crash" >/dev/null
 wait_exec_file "/data/save-sync/temporary/backup-e2e-started-v1-1"
 supervisor_before="$("${compose[@]}" ps -q backup-supervisor)"
 "${compose[@]}" kill dedicated-server-save-sync >/dev/null
-"${compose[@]}" up --detach --wait dedicated-server-save-sync >/dev/null
+# Arranca el web sin esperar su healthcheck: el backup debe poder continuar sin
+# depender de que Gunicorn esté listo para servir HTTP.
+"${compose[@]}" up --detach dedicated-server-save-sync >/dev/null
 supervisor_after="$("${compose[@]}" ps -q backup-supervisor)"
 [[ -n "${supervisor_before}" && "${supervisor_before}" == "${supervisor_after}" ]]
 "${compose[@]}" exec -T backup-supervisor \
   touch /data/save-sync/temporary/backup-e2e-release-v1
+# Solo después de liberar el hook esperamos a que el web vuelva a healthy para
+# consultar /backup-status. Así el timeout del backup no queda ligado al health
+# interval del servicio web.
+"${compose[@]}" up --detach --wait dedicated-server-save-sync >/dev/null
 wait_backup_completed 1
 
 # Caso 2: también el supervisor puede morir; la fila durable debe sobrevivir y
