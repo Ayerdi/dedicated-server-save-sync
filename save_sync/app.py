@@ -751,10 +751,18 @@ def create_app(config=None):
         pending_rows = db.execute(
             "SELECT version,started_at FROM pending_backups ORDER BY version"
         ).fetchall()
-        pending = [
-            {"version": row["version"], "startedAt": row["started_at"]}
-            for row in pending_rows
-        ]
+        stale_before = utcnow() - timedelta(seconds=backup_timeout + 60)
+        pending = []
+        stale_pending = []
+        for row in pending_rows:
+            item = {"version": row["version"], "startedAt": row["started_at"]}
+            try:
+                is_stale = parse_iso(row["started_at"]) < stale_before
+            except (AttributeError, TypeError, ValueError):
+                # Un marcador ilegible tampoco debe presentarse como backup
+                # activo: la observabilidad es deliberadamente conservadora.
+                is_stale = True
+            (stale_pending if is_stale else pending).append(item)
 
         attempts = []
         rows = db.execute(
@@ -790,6 +798,9 @@ def create_app(config=None):
         current_pending = any(
             item["version"] == latest_version for item in pending
         )
+        current_stale_pending = any(
+            item["version"] == latest_version for item in stale_pending
+        )
         enabled = bool(str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip())
         if not current:
             state = "not_initialized"
@@ -811,6 +822,8 @@ def create_app(config=None):
             ),
             "pending": current_pending,
             "pendingVersions": pending,
+            "stalePending": current_stale_pending,
+            "stalePendingVersions": stale_pending,
             "lastAttempt": last_attempt,
             "lastCompleted": last_completed,
         }
@@ -1893,13 +1906,21 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&
 const safeInt=value=>Number.isSafeInteger(Number(value))?Number(value):0;
 async function mutate(url,method='POST',body={}){const r=await fetch(url,{method,headers,body:method==='DELETE'?undefined:JSON.stringify(body)});const j=await r.json();if(!r.ok)alert(j.message||'Error');return [r,j]}
 async function load(){
- const [s,h,b]=await Promise.all([fetch('__WEB_API_PREFIX__/status').then(r=>r.json()),fetch('__WEB_API_PREFIX__/history').then(r=>r.json()),fetch('__WEB_API_PREFIX__/backup-status').then(r=>r.json())]);
+ const backup=fetch('__WEB_API_PREFIX__/backup-status').then(async r=>r.ok?await r.json():null).catch(()=>null);
+ const [s,h,b]=await Promise.all([fetch('__WEB_API_PREFIX__/status').then(r=>r.json()),fetch('__WEB_API_PREFIX__/history').then(r=>r.json()),backup]);
  document.querySelector('#state').textContent=s.locked?'Estado: en uso':'Estado: disponible';document.querySelector('#state').className=s.locked?'busy':'free';
  document.querySelector('#facts').innerHTML=[['Versión',s.version],['__IDENTITY_LABEL__',s.saveIdentity||'—'],['Última actualización',s.updatedAt||'Sin inicializar'],['Último jugador',s.updatedBy||'—'],['Tamaño',s.size+' bytes'],['SHA-256',s.sha256||'—']].map(x=>`<div><div class=label>${esc(x[0])}</div><div class=value>${esc(x[1])}</div></div>`).join('');
  document.querySelector('#lock').textContent=s.locked?`Servidor en uso por ${s.lock.owner}. Última señal: ${s.lock.lastHeartbeatAt}. Caduca: ${s.lock.expiresAt}.`:'';
- const labels={completed:'Completado',pending:'Pendiente',failed:'Fallido',unknown:'Sin resultado',disabled:'Desactivado',not_initialized:'Sin partida'};
- document.querySelector('#backupState').textContent=`Estado: ${labels[b.state]||b.state}`;document.querySelector('#backupState').className=`backup-${b.state}`;
- document.querySelector('#backupFacts').innerHTML=[['Última versión publicada',b.latestPublishedVersion||'—'],['Última versión respaldada',b.lastCompleted?.version||'—'],['Último backup completado',b.lastCompleted?.completedAt||'—'],['Último exitCode',b.lastAttempt?.exitCode??'—'],['Pendientes',b.pendingVersions.map(x=>x.version).join(', ')||'Ninguno'],['Versión actual respaldada',b.latestVersionBackedUp?'Sí':'No']].map(x=>`<div><div class=label>${esc(x[0])}</div><div class=value>${esc(x[1])}</div></div>`).join('');
+ if(b){
+  const labels={completed:'Completado',pending:'Pendiente',failed:'Fallido',unknown:'Sin resultado',disabled:'Desactivado',not_initialized:'Sin partida'};
+  const stateLabel=b.stalePending&&b.state==='unknown'?'Sin resultado (marcador vencido)':labels[b.state]||b.state;
+  document.querySelector('#backupState').textContent=`Estado: ${stateLabel}`;document.querySelector('#backupState').className=`backup-${b.state}`;
+  const pendingVersions=Array.isArray(b.pendingVersions)?b.pendingVersions:[];
+  const staleVersions=Array.isArray(b.stalePendingVersions)?b.stalePendingVersions:[];
+  document.querySelector('#backupFacts').innerHTML=[['Última versión publicada',b.latestPublishedVersion||'—'],['Última versión respaldada',b.lastCompleted?.version||'—'],['Último backup completado',b.lastCompleted?.completedAt||'—'],['Último exitCode',b.lastAttempt?.exitCode??'—'],['Pendientes',pendingVersions.map(x=>x.version).join(', ')||'Ninguno'],['Marcadores vencidos',staleVersions.map(x=>x.version).join(', ')||'Ninguno'],['Versión actual respaldada',b.latestVersionBackedUp?'Sí':'No']].map(x=>`<div><div class=label>${esc(x[0])}</div><div class=value>${esc(x[1])}</div></div>`).join('');
+ }else{
+  document.querySelector('#backupState').textContent='Estado: no disponible';document.querySelector('#backupState').className='backup-unknown';document.querySelector('#backupFacts').innerHTML='';
+ }
  document.querySelector('#history').innerHTML=h.versions.map(v=>{const id=safeInt(v.version);return `<tr><td>${id}</td><td><code>${esc(v.saveIdentity)}</code></td><td>${esc(v.updatedBy)}</td><td>${esc(v.updatedAt)}</td><td>${esc(v.size)}</td><td><code>${esc(v.sha256)}</code></td><td>${role==='admin'?`<a href=__WEB_API_PREFIX__/history/${id}/download>Descargar</a> <button onclick=restoreV(${id})>Restaurar</button>`:''}</td></tr>`}).join('');
  document.querySelector('#force').hidden=role!=='admin'||!s.locked;if(role==='admin')loadTokens()
 }
