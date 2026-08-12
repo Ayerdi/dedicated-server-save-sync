@@ -11,7 +11,10 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from save_sync.retention import cleanup_canonical_versions_locked
+from save_sync.retention import (
+    prune_canonical_versions_locked,
+    reconcile_unreferenced_files_locked,
+)
 
 LOGGER = logging.getLogger("save-sync-backup-supervisor")
 
@@ -220,6 +223,17 @@ class BackupSupervisor:
                 db.rollback()
                 raise
 
+    def reconcile_filesystem(self):
+        """Borra solo ZIPs que siguen sin referencia tras un COMMIT previo."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                reconcile_unreferenced_files_locked(db, self.storage, self.logger)
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+
     def finalize_job(self, job, *, success, exit_code=0, timed_out=False, reason=None):
         details = {
             "version": job["version"],
@@ -231,9 +245,8 @@ class BackupSupervisor:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             try:
-                # DELETE + auditoría + retención forman una sola decisión. Si
-                # SQLite falla, rollback conserva el marcador y el trabajo se
-                # reintentará (semántica at-least-once, nunca pérdida silenciosa).
+                # Marker, auditoría y retención de METADATA forman una única
+                # decisión durable. Ningún ZIP se borra antes de este COMMIT.
                 db.execute(
                     "DELETE FROM pending_backups WHERE version=?", (job["version"],)
                 )
@@ -243,17 +256,26 @@ class BackupSupervisor:
                     success,
                     **details,
                 )
-                cleanup_canonical_versions_locked(
+                prune_canonical_versions_locked(
                     db,
-                    self.storage,
                     self.retention_per_slot,
                     self.identity_for_username,
-                    self.logger,
                 )
                 db.commit()
             except Exception:
                 db.rollback()
                 raise
+        # Segunda fase: bajo un nuevo write-lock se revalidan referencias y solo
+        # entonces se borran ZIPs. Si el proceso muere aquí, queda como máximo un
+        # fichero huérfano que se reconciliará después; nunca metadata rota.
+        try:
+            self.reconcile_filesystem()
+        except Exception:
+            self.logger.exception(
+                "La metadata del backup v%s quedó confirmada, pero falló la "
+                "reconciliación física; se reintentará sin repetir el backup",
+                job["version"],
+            )
 
     def terminate_process_group(self, process, sigterm_timeout=10, sigkill_timeout=10):
         try:
@@ -384,6 +406,13 @@ class BackupSupervisor:
         try:
             while not self.stop_requested and not self.schema_ready():
                 self.sleep(min(self.poll_seconds, 1.0))
+            if not self.stop_requested:
+                try:
+                    self.reconcile_filesystem()
+                except Exception:
+                    self.logger.exception(
+                        "No se pudo reconciliar el filesystem al arrancar; se reintentará"
+                    )
             while not self.stop_requested:
                 self.touch_heartbeat()
                 try:
