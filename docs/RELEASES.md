@@ -13,6 +13,18 @@ dedicated-server-save-sync-client-v2.2.2.zip
 dedicated-server-save-sync-client-v2.2.2.zip.sha256
 ```
 
+Release target:
+
+```text
+81b4592fff57fcc648402447419ff241fa316fcb
+```
+
+Client ZIP digest:
+
+```text
+sha256:7ed5df418fcefa26495adef1ce53b55390b2c0c3b6760543a945057668757774
+```
+
 See [RELEASE-NOTES-v2.2.2.md](RELEASE-NOTES-v2.2.2.md).
 
 ## Deterministic client builder
