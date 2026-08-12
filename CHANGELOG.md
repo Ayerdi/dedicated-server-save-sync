@@ -2,10 +2,10 @@
 
 ## Sin publicar
 
-- Endurece la publicación pública sin cambiar runtime, esquema, API ni protocolo
-  del cliente.
+- Endurece la publicación pública sin cambiar el protocolo del cliente ni el
+  formato de los saves.
 - La instalación de producción fija explícitamente backend y cliente a la misma
-  release estable (`v2.2.0`) en vez de desplegar la punta móvil de `main`.
+  release estable en vez de desplegar la punta móvil de `main`.
 - Pages ya no puede desplegarse mientras el repositorio sea privado, ni siquiera
   mediante `workflow_dispatch` manual.
 - Wiki y configuración post-publicación exigen checkout limpio, `main`,
@@ -16,8 +16,25 @@
 - Amplía el checker documental a enlaces Wiki y Pages, y endurece CI con
   credenciales Git no persistentes, timeouts y ejecución única por PR/main.
 - Restaura el detalle histórico de las releases anteriores y documenta la
-  diferencia entre la release de producto `v2.2.0` y `clientVersion=1.2.0` del
+  diferencia entre la release de producto y `clientVersion=1.2.0` del
   adaptador Palworld.
+- Convierte `pending_backups` en una cola durable consumida por un sidecar
+  `backup-supervisor` independiente de Gunicorn. Publicar/restore y encolar el
+  backup forman un único commit SQLite.
+- Un reinicio del worker web ya no afecta al backup; una parada/crash del propio
+  supervisor conserva la fila para reintentar. La finalización (marker,
+  auditoría y retención) es transaccional y ofrece semántica at-least-once.
+- Los markers pendientes dejan de purgarse por edad: `stalePending` queda como
+  señal de observabilidad y la versión permanece protegida hasta un resultado
+  final conocido.
+- Restic 0.18.0 deja de instalarse desde APT: la imagen descarga los assets
+  oficiales `amd64`/`arm64` con versión y SHA-256 fijados y CI verifica el
+  binario resultante.
+- Añade E2E Docker que mata el contenedor web durante un backup y después mata
+  el propio supervisor durante otro intento, demostrando recuperación desde
+  SQLite y retención correcta al finalizar.
+- `config/deploy.sh` exige backend y supervisor healthy antes de publicar la
+  ruta Traefik; rollback detiene ambos sin borrar datos.
 
 ## 2.2.0
 
@@ -106,7 +123,7 @@
 ## 1.1.0
 
 - Corrige la ambigüedad cuando el equipo contiene varios mundos locales y la
-  autoridad remota ya identifica cuál debe usarse.
+autoridad remota ya identifica cuál debe usarse.
 
 ## 1.0.0
 
