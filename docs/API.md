@@ -224,6 +224,72 @@ DELETE /admin/tokens/{id}
 GET    /admin/audit?limit=100
 ```
 
+### Estado del backup externo
+
+```http
+GET /backup-status
+```
+
+Devuelve el estado observable del hook para que clientes y panel puedan
+responder si el hook confirmó correctamente el backup de la versión vigente:
+
+```json
+{
+  "enabled": true,
+  "state": "completed",
+  "latestPublishedVersion": 13,
+  "latestVersionBackedUp": true,
+  "pending": false,
+  "pendingVersions": [],
+  "stalePending": false,
+  "stalePendingVersions": [],
+  "lastAttempt": {
+    "version": 13,
+    "completedAt": "2026-08-12T10:00:00Z",
+    "success": true,
+    "exitCode": 0,
+    "timedOut": false,
+    "reason": null
+  },
+  "lastCompleted": {
+    "version": 13,
+    "completedAt": "2026-08-12T10:00:00Z",
+    "success": true,
+    "exitCode": 0,
+    "timedOut": false,
+    "reason": null
+  }
+}
+```
+
+`state` puede ser `not_initialized`, `disabled`, `pending`, `completed`,
+`failed` o `unknown`. `unknown` indica que el hook está habilitado pero no hay
+resultado auditable para la versión vigente. También se usa cuando el único
+marcador de esa versión está vencido (`started_at < ahora - (timeout + 60s)`).
+En ese caso `stalePending` es `true`, el marcador aparece en
+`stalePendingVersions` y no se cuenta como pendiente activo.
+
+`enabled` representa la configuración **actual** del hook y es independiente
+del resultado histórico de la versión vigente. Por ejemplo, una versión que
+se respaldó correctamente puede seguir devolviendo `state="completed"` y
+`latestVersionBackedUp=true` después de desactivar el hook, mientras
+`enabled=false` advierte que las publicaciones siguientes ya no lanzarán el
+backup automático. Los clientes deben mostrar ambas dimensiones por separado.
+
+`lastAttempt`, `lastCompleted` y el resultado de la versión vigente se obtienen
+recorriendo la auditoría en orden descendente hasta encontrar los registros
+válidos necesarios; no se pierden éxitos antiguos por un límite fijo de 500
+eventos.
+
+`latestVersionBackedUp=true` significa que el hook de la versión vigente
+terminó con éxito y ese resultado quedó auditado. El endpoint no consulta el
+repositorio restic ni verifica que el snapshot siga existiendo en el momento
+de la consulta.
+
+La llamada es solo lectura: clasifica los marcadores vencidos pero no los
+purga de SQLite. La limpieza persistente sigue correspondiendo al cleanup
+normal. Requiere autenticación, pero no rol administrador.
+
 Restaurar crea una versión creciente y conserva `saveIdentity`.
 
 ## Ejemplos `curl`

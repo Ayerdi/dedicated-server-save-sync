@@ -1,5 +1,11 @@
 # Cambios
 
+## Sin publicar
+
+- Añade `GET /backup-status` y una tarjeta en el panel con la última versión
+  publicada, el último backup completado, fecha, `exitCode` y estado
+  pendiente/fallido/desconocido.
+
 ## 2.1.1
 
 - Actualiza dependencias: gunicorn 26, pytest 9.1.1 y ruff 0.16 (con hashes),
