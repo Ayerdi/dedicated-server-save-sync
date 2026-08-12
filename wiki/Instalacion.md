@@ -1,11 +1,12 @@
 # Instalación
 
-## Backend
+## Backend estable
 
 Necesitas Docker Engine, Docker Compose v2, HTTPS y almacenamiento privado.
+Usa el tag estable, no la punta cambiante de `main`:
 
 ```bash
-git clone https://github.com/Ayerdi/dedicated-server-save-sync.git
+git clone --branch v2.2.0 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
 cd dedicated-server-save-sync
 config/deploy.sh --init-env
 ```
@@ -24,8 +25,10 @@ bash scripts/local-e2e.sh
 
 ## Cliente
 
-Descarga el ZIP desde **Releases**, extrae el contenido y sigue
-[[Cliente-Windows]].
+Descarga `dedicated-server-save-sync-client-v2.2.0.zip` y su `.sha256` desde
+**Releases**, verifica el checksum y continúa con [[Cliente-Windows]].
+
+Cliente y backend deberían corresponder a la misma release estable.
 
 Para producción lee también
-[OPERATIONS.md](https://github.com/Ayerdi/dedicated-server-save-sync/blob/main/docs/OPERATIONS.md).
+[OPERATIONS.md](https://github.com/Ayerdi/dedicated-server-save-sync/blob/v2.2.0/docs/OPERATIONS.md).

@@ -4,11 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Sincronización segura de saves para alternar el servidor dedicado de Palworld entre varios PCs.">
+  <link rel="canonical" href="https://ayerdi.github.io/dedicated-server-save-sync/">
+  <link rel="alternate" hreflang="es" href="https://ayerdi.github.io/dedicated-server-save-sync/">
+  <link rel="alternate" hreflang="en" href="https://ayerdi.github.io/dedicated-server-save-sync/en/">
+  <link rel="alternate" hreflang="x-default" href="https://ayerdi.github.io/dedicated-server-save-sync/">
+  <meta name="theme-color" content="#0b1020">
   <title>Dedicated Server Save Sync · Palworld</title>
   <link rel="stylesheet" href="./assets/style.css">
 </head>
 <body>
-<nav>
+<a class="skip-link" href="#contenido">Saltar al contenido</a>
+<nav aria-label="Navegación principal">
   <div class="wrap navbar">
     <a class="brand" href="./">SAVE SYNC</a>
     <div class="navlinks">
@@ -17,7 +23,7 @@
       <a href="#instalar">Instalar</a>
       <a href="https://github.com/Ayerdi/dedicated-server-save-sync/wiki">Wiki</a>
       <a href="https://github.com/Ayerdi/dedicated-server-save-sync">GitHub</a>
-      <a class="lang" href="./en/">EN</a>
+      <a class="lang" href="./en/" lang="en" hreflang="en">EN</a>
     </div>
   </div>
 </nav>
@@ -32,28 +38,28 @@
       ZIPs manualmente.
     </p>
     <div class="actions">
-      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest">Descargar cliente</a>
-      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync#inicio-rápido">Instalación</a>
-      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/blob/main/docs/ARCHITECTURE.md">Arquitectura</a>
+      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/tag/v2.2.0">Descargar v2.2.0</a>
+      <a class="button" href="#instalar">Instalación</a>
+      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/blob/v2.2.0/docs/ARCHITECTURE.md">Arquitectura</a>
     </div>
   </div>
 </header>
 
-<main>
+<main id="contenido">
 <section id="como">
   <div class="wrap">
     <div class="section-title">
       <h2>Evita la pregunta peligrosa: “¿cuál era el save bueno?”</h2>
       <p>El backend mantiene una única autoridad y cada host debe demostrar que parte de la versión correcta.</p>
     </div>
-    <div class="flow">
-      <div>1 · status + lock</div><div class="arrow">→</div>
-      <div>2 · descarga si procede</div><div class="arrow">→</div>
+    <div class="flow" aria-label="Flujo de inicio">
+      <div>1 · status + lock</div><div class="arrow" aria-hidden="true">→</div>
+      <div>2 · descarga si procede</div><div class="arrow" aria-hidden="true">→</div>
       <div>3 · PalServer + heartbeat</div>
     </div>
-    <div class="flow" style="margin-top:.65rem">
-      <div>4 · save + shutdown</div><div class="arrow">→</div>
-      <div>5 · ZIP + SHA-256</div><div class="arrow">→</div>
+    <div class="flow flow-secondary" aria-label="Flujo de publicación">
+      <div>4 · save + shutdown</div><div class="arrow" aria-hidden="true">→</div>
+      <div>5 · ZIP + SHA-256</div><div class="arrow" aria-hidden="true">→</div>
       <div>6 · upload con baseVersion</div>
     </div>
   </div>
@@ -68,10 +74,10 @@
     <div class="grid">
       <article class="card"><h3>Concurrencia</h3><p>Lock exclusivo, TTL, heartbeat y control optimista con <code>baseVersion</code>.</p></article>
       <article class="card"><h3>Identidad</h3><p>Palworld se valida con <code>worldGuid</code> para impedir que otro mundo se publique por error.</p></article>
-      <article class="card"><h3>Publicación atómica</h3><p>ZIP temporal, validación defensiva, SHA-256 y movimiento de autoridad dentro de transacciones SQLite.</p></article>
+      <article class="card"><h3>Publicación atómica</h3><p>ZIP temporal, validación defensiva, SHA-256 y cambio transaccional de la autoridad SQLite.</p></article>
       <article class="card"><h3>Recuperación</h3><p>Historial, restore como versión nueva, ZIP pendiente si una publicación no puede confirmarse y rollback operativo.</p></article>
       <article class="card"><h3>Backup externo</h3><p>Hook post-publicación, timeout, auditoría y estado observable. Compatible con herramientas como restic.</p></article>
-      <article class="card"><h3>Secretos</h3><p>Bearer hashes en servidor y DPAPI en Windows. Los archivos runtime están excluidos del repositorio y de las releases.</p></article>
+      <article class="card"><h3>Secretos</h3><p>Hashes Bearer en servidor y DPAPI en Windows. Los archivos runtime quedan fuera del repositorio y de las releases.</p></article>
     </div>
   </div>
 </section>
@@ -80,27 +86,27 @@
   <div class="wrap">
     <div class="section-title">
       <h2>Backend self-hosted + cliente Windows</h2>
-      <p>El backend vive en una web siempre disponible; PalServer solo se ejecuta en el PC que aloja la sesión.</p>
+      <p>En producción, cliente y backend deben corresponder a la misma release estable.</p>
     </div>
     <div class="status">
       <div class="card">
-        <h3>Backend</h3>
-        <pre>git clone https://github.com/Ayerdi/dedicated-server-save-sync.git
+        <h3>Backend v2.2.0</h3>
+        <pre>git clone --branch v2.2.0 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
 cd dedicated-server-save-sync
 config/deploy.sh --init-env
 config/deploy.sh</pre>
-        <p>Producción: Docker Compose, HTTPS, almacenamiento privado y Traefik/ForwardAuth o modo API-only.</p>
+        <p>Requiere Docker Compose, HTTPS, almacenamiento privado y Traefik/ForwardAuth o modo API-only.</p>
       </div>
       <div class="card">
-        <h3>Cliente</h3>
-        <p><strong>1.</strong> Descarga el ZIP de v2.2.0.</p>
-        <p><strong>2.</strong> Copia <code>config.example.json</code>.</p>
-        <p><strong>3.</strong> Configura URL y PalServer.</p>
+        <h3>Cliente v2.2.0</h3>
+        <p><strong>1.</strong> Descarga el ZIP y su archivo <code>.sha256</code>.</p>
+        <p><strong>2.</strong> Verifica el SHA-256 antes de extraerlo.</p>
+        <p><strong>3.</strong> Copia <code>config.example.json</code> y configura URL y PalServer.</p>
         <p><strong>4.</strong> Ejecuta <code>Configurar-secretos.cmd</code> y <code>Probar-conexion.cmd</code>.</p>
         <p><strong>5.</strong> Inicia con <code>Iniciar-PalworldSync.cmd</code>.</p>
       </div>
     </div>
-    <p class="note">La REST local de Palworld no debe exponerse a Internet. Save Sync habla con ella desde localhost.</p>
+    <p class="note">La REST local de Palworld debe escuchar solo en localhost. No abras ese puerto en el router.</p>
   </div>
 </section>
 
@@ -121,11 +127,11 @@ config/deploy.sh</pre>
 <section>
   <div class="wrap">
     <div class="section-title">
-      <h2>Proyecto terminado, no abandonado</h2>
-      <p>v2.2.0 cierra el desarrollo funcional de esta referencia Palworld. El mantenimiento continúa para bugs, seguridad, dependencias y compatibilidad.</p>
+      <h2>Feature-complete, no abandonado</h2>
+      <p>v2.2.0 cierra el desarrollo funcional de esta referencia Palworld. Continúan bugs, seguridad, dependencias y compatibilidad.</p>
     </div>
     <div class="actions">
-      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest">Release v2.2.0</a>
+      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/tag/v2.2.0">Release v2.2.0</a>
       <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/wiki">Wiki</a>
       <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/discussions">Discussions</a>
     </div>

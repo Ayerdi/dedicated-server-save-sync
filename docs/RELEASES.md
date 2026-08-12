@@ -4,15 +4,18 @@
 
 La release estable de referencia es `v2.2.0`.
 
-GitHub Actions crea el paquete de cliente desde el commit de publicación y
-adjunta:
+La publicación original de `v2.2.0` se generó automáticamente desde el commit
+`b085453f4bdd39d7c336980b0a27ce79605aa7a2`. El workflow construyó dos veces el
+mismo cliente, comparó SHA-256 y contenido binario y solo entonces adjuntó:
 
 ```text
 dedicated-server-save-sync-client-v2.2.0.zip
 dedicated-server-save-sync-client-v2.2.0.zip.sha256
 ```
 
-GitHub añade además los archivos fuente automáticos del tag.
+El workflow de una sola versión que realizó esa publicación se conserva en el
+historial Git y en el tag, pero se retira de `main` después de cumplir su función
+para no dejar permanentemente un workflow específico con `contents: write`.
 
 ## Builder reproducible
 
@@ -30,44 +33,51 @@ El builder:
 - excluye tests, `config.json`, secretos y `client/data`;
 - genera SHA-256.
 
-Comprueba reproducibilidad:
+La release publicada de `v2.2.0` tiene como digest del ZIP:
 
-```bash
-bash scripts/build-release.sh 2.2.0
-first="$(cut -d' ' -f1 dist/dedicated-server-save-sync-client-v2.2.0.zip.sha256)"
-rm -f dist/dedicated-server-save-sync-client-v2.2.0.zip*
-bash scripts/build-release.sh 2.2.0
-second="$(cut -d' ' -f1 dist/dedicated-server-save-sync-client-v2.2.0.zip.sha256)"
-test "$first" = "$second"
+```text
+4d07ce1eb70f79471dca8d5f1ed9c4d7a37aaebbf53f5668d84be2058a781494
 ```
 
-## Automatización v2.2.0
+Comprueba un build local contra su propio checksum con:
 
-`.github/workflows/release-v2.2.0.yml` se activa únicamente cuando el propio
-workflow entra en `main`. Antes de crear la release:
-
-1. ejecuta `scripts/check-repository.sh`;
-2. construye el ZIP dos veces;
-3. compara ambos SHA-256;
-4. publica `v2.2.0` apuntando al commit exacto del workflow;
-5. adjunta ZIP y checksum;
-6. usa `docs/RELEASE-NOTES-v2.2.0.md` como notas.
-
-Si `v2.2.0` ya existe, el workflow termina sin modificarla.
-
-El tag creado por GitHub no se presenta como firma GPG del mantenedor. La
-integridad del cliente se publica mediante SHA-256, y la procedencia se apoya en
-el commit de `main`, CI y el workflow versionado.
+```bash
+sha256sum --check dist/dedicated-server-save-sync-client-v2.2.0.zip.sha256
+```
 
 ## Releases posteriores de mantenimiento
 
-Para una futura `v2.2.x`:
+Las futuras releases se publican explícitamente desde un checkout limpio de
+`main`; no existe un workflow con permiso de escritura esperando a un evento de
+push.
 
-1. actualizar `CHANGELOG.md`;
-2. ejecutar CI completa;
-3. construir dos veces el artefacto;
-4. crear un tag/release desde un commit de `main`;
-5. adjuntar ZIP + SHA-256;
-6. documentar claramente si cambia el cliente Palworld.
+Preparación de una versión `X.Y.Z`:
+
+1. actualizar `CHANGELOG.md` con una sección `## X.Y.Z`;
+2. crear `docs/RELEASE-NOTES-vX.Y.Z.md`;
+3. mergear por PR y esperar CI verde en el **HEAD exacto de `main`**;
+4. actualizar el checkout local hasta coincidir con `origin/main`;
+5. ejecutar:
+
+   ```bash
+   bash scripts/publish-release.sh X.Y.Z --apply
+   ```
+
+El script se niega a publicar si:
+
+- el árbol tiene cambios locales;
+- no se ejecuta desde `main`;
+- `HEAD` difiere de `origin/main`;
+- la CI más reciente de `main` no es `completed:success` para ese SHA;
+- faltan changelog o notas;
+- ya existe el tag o la release.
+
+Si los preflight pasan, ejecuta `scripts/check-repository.sh`, genera el ZIP dos
+veces, compara SHA-256 y bytes y crea la release apuntando al commit exacto.
+
+El tag/release creado por GitHub CLI no se presenta como firma GPG del
+mantenedor. La integridad del cliente se publica mediante SHA-256, y la
+procedencia se apoya en el commit de `main`, la CI, la revisión por PR y el
+proceso versionado de construcción.
 
 No publicar saves, datos runtime, configuración real ni logs como assets.

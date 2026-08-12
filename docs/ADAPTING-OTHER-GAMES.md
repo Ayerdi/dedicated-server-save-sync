@@ -1,5 +1,11 @@
 # Adaptar el patrón a otros juegos
 
+> **Referencia técnica, no soporte estable.** `v2.2.0` se publica y mantiene
+> como implementación de referencia para Palworld. Este documento conserva el
+> diseño genérico existente y los requisitos que una adaptación debería cumplir;
+> no implica que este repositorio acepte nuevos juegos en su roadmap de
+> mantenimiento. La futura plataforma multi-juego se desarrollará por separado.
+
 ## Qué puede reutilizarse
 
 El backend aporta primitivas independientes del juego:
@@ -15,13 +21,13 @@ Las rutas HTTP canónicas son `/api/games/{gameKey}` y el contrato común usa
 `saveIdentity`. Palworld conserva `worldGuid` y rutas antiguas únicamente como
 compatibilidad de su adaptador.
 
-Cada juego se despliega como instancia aislada. No hace falta duplicar el
-backend, pero sí proporcionar un JSON, un adaptador de cliente y configuración
-de almacenamiento/Compose propios.
+La arquitectura actual aísla cada juego en su propia instancia y volumen. Esa
+capacidad forma parte del diseño heredado, pero no convierte otros títulos en
+integraciones soportadas.
 
 ## Investigación obligatoria
 
-Antes de escribir el cliente de otro juego, responder con evidencia:
+Antes de escribir un cliente para otro juego, responder con evidencia:
 
 1. ¿Qué proceso posee o escribe el save?
 2. ¿Existe comando/API para guardar y apagar limpiamente?
@@ -37,7 +43,7 @@ Si no existe identificador nativo, puede usarse uno de configuración fijado en
 la primera subida, pero ofrece menos protección: el cliente debe demostrar que
 la carpeta elegida corresponde a esa identidad.
 
-## Contrato mínimo recomendado
+## Contrato mínimo de referencia
 
 Mantener estas operaciones aunque cambien los nombres:
 
@@ -55,7 +61,7 @@ restore
 El backend debe rechazar con `409` tanto una base antigua como otra identidad.
 Una restauración debe crear una versión nueva.
 
-## Archivos nuevos para otro juego
+## Archivos que requeriría una adaptación
 
 ```text
 config/games/<game-key>.json
@@ -64,7 +70,7 @@ client/adapters/<game-key>/Adapter.ps1
 client/adapters/<game-key>/tests/*.Tests.ps1
 ```
 
-El JSON backend debe declarar:
+Ejemplo de JSON backend:
 
 ```json
 {
@@ -78,16 +84,15 @@ El JSON backend debe declarar:
 }
 ```
 
-Después se crea un `.env` independiente con `SAVE_SYNC_GAME_KEY`, otro
-`SAVE_SYNC_HOST_STORAGE_PATH` y, preferiblemente, otro
-`SAVE_SYNC_COMPOSE_PROJECT`. `deploy.sh` genera nombres de ruta, contenedor y
-alias de red aislados por juego.
+Una instancia experimental debería usar `.env`, almacenamiento y proyecto
+Compose independientes. No compartir base de datos ni directorio de saves entre
+juegos.
 
 ## Adaptación del cliente
 
 El lanzador común lee `Adapter` y `GameKey`, valida `adapter.json` y ejecuta el
-`Adapter.ps1` correspondiente. El nuevo adaptador debe implementar o reutilizar
-de forma segura estas responsabilidades:
+`Adapter.ps1` correspondiente. Cualquier adaptación debe resolver de forma
+segura:
 
 - localizar y validar la partida local;
 - confirmar identidad y versión del servidor;
@@ -105,7 +110,7 @@ Preservar:
 - no liberar el lock tras una sesión modificada que no se publicó;
 - prohibición de inventar `baseVersion` o identidad para forzar un upload.
 
-## Checklist de aceptación
+## Checklist técnico de aceptación
 
 - Dos adquisiciones simultáneas: solo una obtiene lock.
 - Dos uploads sobre la misma base: solo uno publica.

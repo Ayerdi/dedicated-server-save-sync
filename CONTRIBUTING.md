@@ -44,9 +44,12 @@ técnica del diseño genérico existente.
 python3 -m venv .venv
 . .venv/bin/activate
 pip install --require-hashes -r requirements-dev.txt
-ruff check save_sync tests wsgi.py
+bash -n scripts/*.sh config/*.sh
+ruff check save_sync tests wsgi.py scripts/check-docs.py
+python scripts/check-docs.py
 python -m pytest -q
 pip-audit -r requirements.txt --progress-spinner=off
+docker compose config --quiet
 bash scripts/run-gitleaks.sh
 bash scripts/local-e2e.sh
 ```

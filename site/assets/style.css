@@ -25,6 +25,23 @@ body {
   line-height: 1.6;
 }
 a { color: inherit; }
+a:focus-visible, button:focus-visible {
+  outline: 3px solid var(--warn);
+  outline-offset: 3px;
+}
+.skip-link {
+  position: fixed;
+  top: .75rem;
+  left: .75rem;
+  z-index: 100;
+  padding: .65rem .85rem;
+  border-radius: .55rem;
+  background: var(--text);
+  color: var(--bg);
+  transform: translateY(-200%);
+  transition: transform .15s ease;
+}
+.skip-link:focus { transform: translateY(0); }
 .wrap { width: min(var(--max), calc(100% - 2rem)); margin: 0 auto; }
 nav {
   position: sticky; top: 0; z-index: 10;
@@ -60,6 +77,7 @@ h1 { font-size: clamp(2.6rem, 8vw, 5.4rem); line-height: .98; margin: 1rem 0; le
   padding: .78rem 1.05rem; border-radius: .75rem; text-decoration: none;
   font-weight: 700; border: 1px solid var(--line);
   background: var(--panel-2);
+  transition: transform .15s ease, border-color .15s ease;
 }
 .button.primary { background: var(--accent); color: #071023; border-color: transparent; }
 .button:hover { transform: translateY(-1px); }
@@ -84,6 +102,7 @@ pre {
 .flow {
   display: grid; grid-template-columns: repeat(5, 1fr); gap: .65rem; align-items: stretch;
 }
+.flow-secondary { margin-top: .65rem; }
 .flow div {
   border: 1px solid var(--line); border-radius: .8rem; padding: .85rem;
   background: var(--panel); text-align: center; font-size: .94rem;
@@ -104,4 +123,8 @@ footer a { color: var(--text); }
   .flow { grid-template-columns: 1fr; }
   .flow .arrow { padding: 0; transform: rotate(90deg); }
   .hero { padding-top: 4.5rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }

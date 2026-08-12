@@ -6,7 +6,7 @@
 
 **Sincronización segura de partidas para alojar alternativamente un servidor dedicado de Palworld en varios PCs sin mantener uno encendido 24/7.**
 
-> **Estado:** `v2.2.0` es la referencia estable de Palworld. Este repositorio entra en mantenimiento: correcciones, seguridad, dependencias y compatibilidad con Palworld. La evolución multi-juego se desarrollará por separado.
+> **Estado:** `v2.2.0` es la referencia estable de Palworld. Este repositorio está en mantenimiento: correcciones, seguridad, dependencias y compatibilidad con Palworld. La evolución multi-juego se desarrollará por separado.
 
 [English](README.en.md) · [Web](https://ayerdi.github.io/dedicated-server-save-sync/) · [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki) · [Releases](https://github.com/Ayerdi/dedicated-server-save-sync/releases) · [Documentación](docs/INDEX.md)
 
@@ -53,7 +53,7 @@ Save Sync **no fusiona mundos divergentes**. Si dos copias fueron modificadas de
 
 La forma más cómoda para el PC Windows es descargar el ZIP del cliente desde la [última release](https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest). Cada release publica también un archivo `.sha256`.
 
-El backend se despliega desde el commit etiquetado usando Docker Compose y dependencias bloqueadas por hash.
+Para producción usa **la misma release del producto** en cliente y backend. El backend estable debe desplegarse desde el tag `v2.2.0`, no desde la punta cambiante de `main`.
 
 ## Inicio rápido
 
@@ -67,7 +67,7 @@ Requisitos de producción:
 - Traefik + ForwardAuth/AuthentiK para el panel, o modo API-only.
 
 ```bash
-git clone https://github.com/Ayerdi/dedicated-server-save-sync.git
+git clone --branch v2.2.0 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
 cd dedicated-server-save-sync
 config/deploy.sh --init-env
 ```
@@ -86,12 +86,22 @@ bash scripts/local-e2e.sh
 
 ### 2. Cliente Windows
 
-1. Descarga y extrae `dedicated-server-save-sync-client-v2.2.0.zip`.
-2. Copia `client/config.example.json` a `client/config.json`.
-3. Configura la URL pública, la ruta de PalServer y `Adapter=palworld`.
-4. Ejecuta `client/Configurar-secretos.cmd`.
-5. Ejecuta `client/Probar-conexion.cmd`.
-6. Inicia con `client/Iniciar-PalworldSync.cmd`.
+1. Descarga `dedicated-server-save-sync-client-v2.2.0.zip` y su `.sha256` desde Releases.
+2. Verifica el checksum antes de extraerlo.
+3. Copia `client/config.example.json` a `client/config.json`.
+4. Configura la URL pública, la ruta de PalServer y `Adapter=palworld`.
+5. Ejecuta `client/Configurar-secretos.cmd`.
+6. Ejecuta `client/Probar-conexion.cmd`.
+7. Inicia con `client/Iniciar-PalworldSync.cmd`.
+
+En PowerShell puedes verificar el paquete así:
+
+```powershell
+$zip = 'dedicated-server-save-sync-client-v2.2.0.zip'
+$expected = ((Get-Content "$zip.sha256") -split '\s+')[0].ToLowerInvariant()
+$actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw 'El SHA-256 del cliente no coincide.' }
+```
 
 El flujo normal es:
 
@@ -135,7 +145,7 @@ Para vulnerabilidades usa [SECURITY.md](SECURITY.md). Para soporte no sensible u
 
 ## Alcance del proyecto
 
-El backend ya contiene primitivas genéricas (`gameKey`, `saveIdentity`, adaptadores), y se conserva documentación sobre cómo estudiar otros juegos. Sin embargo, **la versión pública estable de este repositorio se considera la implementación de referencia de Palworld**.
+El backend conserva primitivas genéricas (`gameKey`, `saveIdentity`, adaptadores), y se mantiene documentación técnica sobre ese diseño. Sin embargo, **la versión pública estable de este repositorio soporta Palworld**.
 
 Los rediseños que impliquen instalación multi-juego, discovery automático, múltiples instancias de servidor o un agente multiplataforma no forman parte del roadmap de mantenimiento de este repositorio.
 
@@ -167,7 +177,7 @@ Invoke-Pester -Path .\client -CI
 - [Despliegue y operación](docs/OPERATIONS.md)
 - [Desarrollo local](docs/LOCAL-DEVELOPMENT.md)
 - [Migraciones](docs/MIGRATIONS.md)
-- [Adaptación a otros juegos](docs/ADAPTING-OTHER-GAMES.md)
+- [Referencia del diseño multi-juego](docs/ADAPTING-OTHER-GAMES.md)
 - [Releases](docs/RELEASES.md)
 - [Checklist de publicación](docs/PUBLICATION.md)
 - [Seguridad](SECURITY.md)
