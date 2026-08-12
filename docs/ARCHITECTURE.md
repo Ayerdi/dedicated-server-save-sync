@@ -43,25 +43,57 @@ de publicación es:
 4. mover a un nombre histórico inmutable con `os.replace`;
 5. sincronizar el directorio;
 6. insertar versión y actualizar `current_save`;
-7. liberar el lock y confirmar SQLite;
-8. reconciliar la retención por slot.
+7. si el backup externo está habilitado, insertar **en la misma transacción** la
+   versión en `pending_backups`;
+8. liberar el lock y confirmar SQLite;
+9. reconciliar la retención por slot sin tocar versiones pendientes.
 
 Una excepción antes del commit mantiene la versión anterior. Los ZIP huérfanos
-se reconcilian al arrancar o tras otra publicación.
+se reconcilian al arrancar o tras otra publicación. Una fila de
+`pending_backups` protege su ZIP aunque sea antigua: la retención no la purga
+por edad.
+
+## Supervisor durable de backup
+
+Gunicorn no ejecuta comandos externos en producción. Un servicio Compose
+separado, `backup-supervisor`, comparte SQLite y el volumen privado. Consume
+`pending_backups`, refresca `started_at` al comenzar un intento, lanza el hook en
+un process-group aislado y registra el resultado.
+
+La finalización se hace bajo un único `BEGIN IMMEDIATE`: eliminar la fila,
+auditar éxito/fallo y aplicar retención son una sola decisión. Si esa
+transacción falla, rollback conserva el trabajo. La semántica es
+**at-least-once**: un crash cuyo resultado no pudo registrarse puede repetir el
+hook al arrancar de nuevo.
+
+Una parada controlada del supervisor termina su grupo hijo pero conserva la
+fila. Un crash de Gunicorn no afecta al proceso de backup porque vive en otro
+contenedor. Un crash duro del propio supervisor deja la cola en SQLite y Docker
+elimina el proceso namespace del contenedor; al reiniciar, la nueva instancia
+reclama el trabajo. Un singleton `flock` impide dos consumidores simultáneos
+sobre el mismo almacenamiento.
+
+El timeout observado o un exit code distinto de cero se consideran un resultado
+final conocido y se auditan como `backup_hook_failed`; no se reintentan
+indefinidamente. El hook debe tolerar repetición para el caso incierto de crash.
 
 ## Concurrencia
 
 - SQLite usa WAL y `busy_timeout`.
 - La creación/migración del esquema se protege con `flock` multiproceso.
-- `PRAGMA user_version=2` permite detectar upgrades y rechazar downgrades.
+- `PRAGMA user_version=3` permite detectar upgrades y rechazar downgrades.
 - Dos adquisiciones simultáneas producen un único ganador.
 - Dos uploads sobre la misma base no pueden publicar la misma versión.
 - La limpieza física permanece bajo el mismo lock de escritura que el snapshot
   de referencias, evitando borrar un ZIP recién publicado.
+- La cola de backup y la publicación nacen en el mismo commit SQLite: nunca
+  existe una versión confirmada que debiera respaldarse pero no haya quedado
+  encolada por muerte del worker entre dos transacciones.
 
 Cada despliegue gestiona un único `gameKey` y requiere una sola instancia del
-servicio sobre filesystem Linux local. Otro juego usa otro proyecto Compose,
-base y volumen. Esta separación es también el aislamiento entre juegos.
+backend y un supervisor sobre filesystem Linux local. Otro juego usa otro
+proyecto Compose, base y volumen. Esta separación es también el aislamiento
+entre juegos.
 
 La política de migración y backup está en [MIGRATIONS.md](MIGRATIONS.md).
 
@@ -87,16 +119,18 @@ existe un endpoint normal para cambiar de partida.
 - La REST local de Palworld usa otras credenciales y no debe exponerse fuera de
   localhost.
 - El almacenamiento ZIP y SQLite no está servido por el frontend.
+- `backup-supervisor` no se conecta a Traefik ni expone puerto HTTP; solo
+  comparte el volumen privado y los secretos necesarios para el destino de
+  backup.
 
 ## Retención
 
 Cada usuario se asocia a un `slot` mediante
 `SAVE_SYNC_USER_IDENTITIES_JSON`. Se conservan las últimas
 `SAVE_SYNC_RETENTION_PER_SLOT` versiones físicas de cada slot. Los alias del
-mismo anfitrión deben compartir slot. La versión vigente nunca se elimina
-durante una publicación fallida.
+mismo anfitrión deben compartir slot. Las versiones en `pending_backups` se
+conservan adicionalmente hasta que el supervisor registre un resultado final.
 
-Tras confirmar una publicación se puede lanzar un comando externo de backup
-(`SAVE_SYNC_POST_PUBLISH_COMMAND`) que recibe la versión, la ruta y la
-identidad publicada. El hook es asíncrono y nunca compromete la versión
-confirmada.
+El comando `SAVE_SYNC_POST_PUBLISH_COMMAND` recibe versión, ruta e identidad
+publicada. Su ejecución es asíncrona respecto a la petición HTTP porque la
+realiza el supervisor independiente; nunca compromete la versión ya confirmada.
