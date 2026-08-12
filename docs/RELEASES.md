@@ -8,23 +8,32 @@ La release estable de referencia es `v2.2.1`.
 durable de backups, supervisor independiente de Gunicorn, retención crash-safe,
 Restic 0.18.0 fijado por SHA-256 y E2E de caída/reinicio.
 
-El cliente publicado contiene:
+La release fue creada desde el merge commit:
+
+```text
+65b5d8c4b6c80b0560a712c87ddee5c4e76cbaec
+```
+
+Publica exactamente estos assets:
 
 ```text
 dedicated-server-save-sync-client-v2.2.1.zip
 dedicated-server-save-sync-client-v2.2.1.zip.sha256
 ```
 
-La release se construye dos veces de forma determinista antes de publicarse. El
-SHA-256 exacto del ZIP se calibró en CI sobre el mismo contenido empaquetable y
-queda fijado en el preflight público antes del merge de publicación:
+El ZIP se calibró de forma reproducible en cuatro ejecuciones antes del merge y
+se volvió a construir dos veces durante la publicación. GitHub confirmó:
 
 ```text
 sha256:4ee67ecdb617374c74f39db3819d6a6dae50618111102fa8a196c3f2beceacfc
 ```
 
-Tras publicar, este documento se actualiza únicamente si GitHub confirma el
-mismo digest. La release nunca se sobrescribe para hacerla coincidir con `main`.
+La release es estable (`draft=false`, `prerelease=false`) y apunta al mismo
+commit que el tag `v2.2.1`. No se sobrescribe una release existente para hacerla
+coincidir con `main`.
+
+El workflow one-shot con `contents: write` usado exclusivamente para crear
+`v2.2.1` se retiró inmediatamente después de verificar la publicación.
 
 ## Release anterior v2.2.0
 
@@ -87,10 +96,5 @@ El script se niega a publicar si el árbol está sucio, no se ejecuta desde
 changelog/notas o ya existe el tag/release. Si los preflight pasan, ejecuta el
 safety check, genera el ZIP dos veces, compara SHA-256 y bytes y crea la release
 apuntando al commit exacto.
-
-Para `v2.2.1`, al ser la release de apertura pública, se usa además un workflow
-one-shot versionado: en PR solo calibra el build con `contents: read`; el job con
-`contents: write` existe únicamente para el push de merge que crea la release.
-El workflow se retira de `main` después de verificar la publicación.
 
 No publicar saves, datos runtime, configuración real ni logs como assets.
