@@ -20,18 +20,26 @@ import bz2
 import hashlib
 import os
 import pathlib
+import platform
 import urllib.request
 
 version = os.environ["RESTIC_VERSION"]
-arch = os.environ["TARGETARCH"] or "amd64"
+raw_arch = (os.environ.get("TARGETARCH") or platform.machine()).lower()
+arch_aliases = {
+    "amd64": "amd64",
+    "x86_64": "amd64",
+    "arm64": "arm64",
+    "aarch64": "arm64",
+}
+try:
+    arch = arch_aliases[raw_arch]
+except KeyError as exc:
+    raise SystemExit(f"Arquitectura restic no soportada: {raw_arch}") from exc
 checksums = {
     "amd64": "98f6dd8bf5b59058d04bfd8dab58e196cc2a680666ccee90275a3b722374438e",
     "arm64": "ce18179c25dc5f2e33e3c233ba1e580f9de1a4566d2977e8d9600210363ec209",
 }
-try:
-    expected = checksums[arch]
-except KeyError as exc:
-    raise SystemExit(f"Arquitectura restic no soportada: {arch}") from exc
+expected = checksums[arch]
 name = f"restic_{version}_linux_{arch}.bz2"
 url = f"https://github.com/restic/restic/releases/download/v{version}/{name}"
 request = urllib.request.Request(
