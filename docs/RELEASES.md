@@ -1,39 +1,73 @@
 # Releases
 
-## Preparación
+## Release estable actual
 
-1. Confirmar árbol limpio y CI verde.
-2. Actualizar `CHANGELOG.md` y versión del adaptador cuando corresponda.
-3. Ejecutar `bash scripts/build-release.sh 2.0.0`.
-4. Ejecutar dos veces y comprobar que el SHA-256 no cambia.
-5. Inspeccionar el ZIP: no debe contener `config.json`, `data/`, logs ni saves.
-6. Completar [la aceptación manual de Palworld](../client/MANUAL-ACCEPTANCE.md)
-   antes de crear el primer tag estable que incluya ese adaptador.
+La release estable de referencia es `v2.2.0`.
 
-El builder usa orden, timestamps y permisos deterministas. Produce:
+GitHub Actions crea el paquete de cliente desde el commit de publicación y
+adjunta:
 
 ```text
-dist/dedicated-server-save-sync-client-v2.0.0.zip
-dist/dedicated-server-save-sync-client-v2.0.0.zip.sha256
+dedicated-server-save-sync-client-v2.2.0.zip
+dedicated-server-save-sync-client-v2.2.0.zip.sha256
 ```
 
-## Publicación
+GitHub añade además los archivos fuente automáticos del tag.
 
-No ejecutar esta sección mientras la aceptación manual aplicable figure como
-pendiente. La generación local del ZIP no publica ni etiqueta nada.
+## Builder reproducible
+
+Para construir localmente:
 
 ```bash
-git tag -s v2.0.0 -m 'release: v2.0.0'
-git push origin v2.0.0
-gh release create v2.0.0 \
-  dist/dedicated-server-save-sync-client-v2.0.0.zip \
-  dist/dedicated-server-save-sync-client-v2.0.0.zip.sha256 \
-  --verify-tag --generate-notes
+bash scripts/build-release.sh 2.2.0
 ```
 
-Si no existe una clave de firma configurada, no sustituir silenciosamente el
-tag firmado por uno ligero: documentar la limitación y decidir explícitamente
-el mecanismo de firma.
+El builder:
 
-Los artefactos contienen solo el cliente parametrizable y documentación legal;
-el backend se construye desde el commit etiquetado con dependencias bloqueadas.
+- ordena los archivos;
+- fija timestamp ZIP a 1980-01-01;
+- normaliza permisos;
+- excluye tests, `config.json`, secretos y `client/data`;
+- genera SHA-256.
+
+Comprueba reproducibilidad:
+
+```bash
+bash scripts/build-release.sh 2.2.0
+first="$(cut -d' ' -f1 dist/dedicated-server-save-sync-client-v2.2.0.zip.sha256)"
+rm -f dist/dedicated-server-save-sync-client-v2.2.0.zip*
+bash scripts/build-release.sh 2.2.0
+second="$(cut -d' ' -f1 dist/dedicated-server-save-sync-client-v2.2.0.zip.sha256)"
+test "$first" = "$second"
+```
+
+## Automatización v2.2.0
+
+`.github/workflows/release-v2.2.0.yml` se activa únicamente cuando el propio
+workflow entra en `main`. Antes de crear la release:
+
+1. ejecuta `scripts/check-repository.sh`;
+2. construye el ZIP dos veces;
+3. compara ambos SHA-256;
+4. publica `v2.2.0` apuntando al commit exacto del workflow;
+5. adjunta ZIP y checksum;
+6. usa `docs/RELEASE-NOTES-v2.2.0.md` como notas.
+
+Si `v2.2.0` ya existe, el workflow termina sin modificarla.
+
+El tag creado por GitHub no se presenta como firma GPG del mantenedor. La
+integridad del cliente se publica mediante SHA-256, y la procedencia se apoya en
+el commit de `main`, CI y el workflow versionado.
+
+## Releases posteriores de mantenimiento
+
+Para una futura `v2.2.x`:
+
+1. actualizar `CHANGELOG.md`;
+2. ejecutar CI completa;
+3. construir dos veces el artefacto;
+4. crear un tag/release desde un commit de `main`;
+5. adjuntar ZIP + SHA-256;
+6. documentar claramente si cambia el cliente Palworld.
+
+No publicar saves, datos runtime, configuración real ni logs como assets.

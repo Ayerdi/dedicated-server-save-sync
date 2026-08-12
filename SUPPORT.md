@@ -1,7 +1,19 @@
 # Soporte
 
-Las incidencias de GitHub se reservan para errores reproducibles y propuestas
-acotadas. Incluye versión, sistema operativo, pasos y salida redactada.
+Dedicated Server Save Sync está en **mantenimiento estable para Palworld**.
+
+Las incidencias de GitHub se reservan para:
+
+- bugs reproducibles;
+- seguridad no sensible;
+- incompatibilidades nuevas con Palworld;
+- dependencias, documentación y operación;
+- mejoras pequeñas que no cambien el alcance del producto.
+
+Los rediseños multi-juego, discovery automático, múltiples instancias y agentes
+multiplataforma no forman parte del roadmap de este repositorio.
+
+Incluye versión, sistema operativo, pasos y salida redactada.
 
 No publiques nunca:
 
@@ -9,11 +21,11 @@ No publiques nunca:
 - contraseñas REST;
 - `.env`, `config.json` o `secrets.json` reales;
 - saves, ZIP o bases SQLite;
-- dominios internos, IP privadas o nombres personales sin consentimiento.
+- dominios internos, IP, GUID, rutas o nombres personales reales.
 
-Para preguntas de uso, emplea GitHub Discussions cuando esté habilitado. Para
-vulnerabilidades o diagnósticos con información sensible, sigue
-[SECURITY.md](SECURITY.md).
+Para preguntas de uso, emplea GitHub Discussions. Para vulnerabilidades o
+diagnósticos con información sensible, sigue [SECURITY.md](SECURITY.md).
 
-El proyecto no ofrece alojamiento, soporte de emergencia ni recuperación de
-mundos divergentes. Conserva backups externos antes de probar una versión nueva.
+El proyecto no ofrece alojamiento, soporte de emergencia ni recuperación
+automática de mundos divergentes. Conserva backups externos antes de probar una
+versión nueva.

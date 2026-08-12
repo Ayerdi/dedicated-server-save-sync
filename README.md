@@ -1,241 +1,147 @@
 # Dedicated Server Save Sync
 
-Motor privado para alojar alternativamente el mismo servidor dedicado en varios
-ordenadores sin mantener ninguno encendido de forma permanente. Una web
-disponible continuamente conserva la última copia válida, decide quién puede
-alojar y evita que una partida antigua sobrescriba progreso más reciente.
+[![CI](https://github.com/Ayerdi/dedicated-server-save-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/Ayerdi/dedicated-server-save-sync/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Ayerdi/dedicated-server-save-sync)](https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest)
+[![License](https://img.shields.io/github/license/Ayerdi/dedicated-server-save-sync)](LICENSE)
 
-Este repositorio contiene el backend Flask, el cliente Windows PowerShell, la
-integración opcional con Traefik y Authentik, pruebas y procedimientos de
-operación. No contiene saves, credenciales, dominios reales ni configuraciones
-personales.
+**Sincronización segura de partidas para alojar alternativamente un servidor dedicado de Palworld en varios PCs sin mantener uno encendido 24/7.**
 
-[English summary](README.en.md) · [Índice de documentación](docs/INDEX.md)
+> **Estado:** `v2.2.0` es la referencia estable de Palworld. Este repositorio entra en mantenimiento: correcciones, seguridad, dependencias y compatibilidad con Palworld. La evolución multi-juego se desarrollará por separado.
 
-> Palworld es una marca de Pocketpair, Inc. Este proyecto comunitario no está
-> afiliado, patrocinado ni respaldado por Pocketpair. No distribuye archivos del
-> juego ni contenido de sus saves.
+[English](README.en.md) · [Web](https://ayerdi.github.io/dedicated-server-save-sync/) · [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki) · [Releases](https://github.com/Ayerdi/dedicated-server-save-sync/releases) · [Documentación](docs/INDEX.md)
 
-## El problema que resuelve
+> Palworld es una marca de Pocketpair, Inc. Este proyecto comunitario no está afiliado, patrocinado ni respaldado por Pocketpair. No distribuye archivos del juego ni contenido de sus saves.
 
-Un save compartido manualmente mediante ZIP, nube o mensajería no ofrece una
-autoridad clara. Dos personas pueden iniciar copias distintas, olvidar cuál es
-la última o subir accidentalmente otro mundo. Las fechas de modificación no
-solucionan el problema: pueden cambiar al copiar archivos y los relojes de los
-equipos no son una fuente de verdad común.
+## Qué problema resuelve
 
-La alternativa habitual sería contratar un servidor de juego siempre activo.
-Cuando eso no es posible, Save Sync separa dos responsabilidades:
+Compartir manualmente un ZIP, una carpeta de red o un directorio de nube no crea una autoridad común. Dos hosts pueden arrancar copias distintas, una fecha de modificación puede cambiar al copiar y una carpeta perfectamente válida puede pertenecer a otro mundo.
 
-- el PC activo ejecuta el servidor del juego y atiende a los jugadores;
-- la web siempre disponible almacena el save y arbitra versión, mundo y lock.
-
-La web no transporta el tráfico del juego. Solo coordina el save.
-
-## Garantías principales
-
-- Versión entera creciente asignada por el backend.
-- Control optimista mediante `baseVersion`.
-- Lock exclusivo con `sessionId`, TTL y heartbeat.
-- Identidad de partida configurable; Palworld usa `worldGuid` de 32 hexadecimales.
-- SHA-256 calculado de nuevo en el servidor.
-- Validación ZIP, límites contra ZIP bombs y bloqueo de traversal/symlinks.
-- Publicación temporal e inmutable antes de actualizar SQLite.
-- Autenticación Bearer por equipo; solo se almacena el hash del token.
-- Historial administrativo, restauración como versión nueva y auditoría.
-- Retención por slots configurables: por ejemplo, una copia de cada anfitrión.
-- Secretos del cliente cifrados con Windows DPAPI.
-
-Ningún mecanismo puede fusionar dos mundos que hayan divergido. Si dos copias se
-modifican separadamente, debe elegirse una de forma manual.
-
-## Arquitectura
+Save Sync separa el servidor de juego del almacenamiento autoritativo:
 
 ```mermaid
 flowchart LR
-  A[PC anfitrión A] -->|HTTPS Bearer| API[Save Sync API]
-  B[PC anfitrión B] -->|HTTPS Bearer| API
+  A[PC anfitrión A] -->|HTTPS + Bearer| API[Save Sync]
+  B[PC anfitrión B] -->|HTTPS + Bearer| API
   API --> DB[(SQLite WAL)]
-  API --> FS[(ZIP privados)]
+  API --> FS[(ZIP versionados)]
+  API -. backup opcional .-> EXT[(restic / almacenamiento externo)]
   A -->|localhost REST| PA[PalServer]
   B -->|localhost REST| PB[PalServer]
 ```
 
-Tecnología:
+El PC que juega ejecuta PalServer. La web conserva la versión válida, arbitra el lock y rechaza uploads obsoletos o pertenecientes a otro mundo.
 
-- Python 3.11, Flask 3.1.3 y Gunicorn.
-- SQLite WAL con transacciones `BEGIN IMMEDIATE`.
-- Docker Compose.
-- Traefik y Authentik para el panel privado.
-- Windows PowerShell 5.1 para el cliente.
+## Garantías principales
 
-Consulta [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para las invariantes y
-[docs/API.md](docs/API.md) para el contrato HTTP completo.
+- versión entera creciente asignada por el backend;
+- control optimista mediante `baseVersion`;
+- lock exclusivo con `sessionId`, TTL y heartbeat;
+- identidad de partida (`saveIdentity`); Palworld usa `worldGuid`;
+- SHA-256 recalculado en servidor;
+- ZIP defensivo contra traversal, symlinks, exceso de entradas y ZIP bombs;
+- publicación temporal e inmutable antes de mover la autoridad en SQLite;
+- restauración como **nueva** versión, nunca reescritura silenciosa;
+- tokens Bearer por equipo almacenados únicamente como hashes;
+- secretos locales cifrados con Windows DPAPI;
+- retención configurable por slot;
+- hook de backup externo con timeout y auditoría;
+- panel con estado observable del backup sin fingir que un snapshot remoto sigue existiendo.
 
-## Estructura
+Save Sync **no fusiona mundos divergentes**. Si dos copias fueron modificadas de forma independiente, hay que elegir una de manera explícita.
 
-```text
-save_sync/       Backend, esquema, API y panel
-client/              Cliente común para Windows
-  adapters/          Integraciones específicas; Palworld es la primera
-config/              Despliegue, verificación, rollback y Traefik
-docs/                Arquitectura, API, operación y adaptación
-tests/               Pruebas backend y concurrencia
-.github/workflows/   CI Linux/Windows y detección de secretos
-```
+## Descarga recomendada
 
-## Inicio rápido del backend
+La forma más cómoda para el PC Windows es descargar el ZIP del cliente desde la [última release](https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest). Cada release publica también un archivo `.sha256`.
 
-Requisitos:
+El backend se despliega desde el commit etiquetado usando Docker Compose y dependencias bloqueadas por hash.
 
-- Docker Engine y Docker Compose v2.
-- Una red Docker compartida con Traefik.
-- Un proveedor ForwardAuth compatible con las cabeceras de Authentik.
-- HTTPS público válido.
+## Inicio rápido
 
-Para probar primero sin proxy ni dominio, utiliza el modo aislado descrito en
-[docs/LOCAL-DEVELOPMENT.md](docs/LOCAL-DEVELOPMENT.md) o ejecuta:
+### 1. Backend
 
-```bash
-bash scripts/local-e2e.sh
-```
+Requisitos de producción:
 
-Preparación:
+- Docker Engine + Docker Compose v2;
+- HTTPS;
+- una ruta privada de almacenamiento;
+- Traefik + ForwardAuth/AuthentiK para el panel, o modo API-only.
 
 ```bash
+git clone https://github.com/Ayerdi/dedicated-server-save-sync.git
+cd dedicated-server-save-sync
 cp .env.example .env
 chmod 600 .env
-```
-
-Edita al menos:
-
-```text
-SAVE_SYNC_GAME_KEY
-SAVE_SYNC_GAME_CONFIG_PATH
-SAVE_SYNC_HOST_STORAGE_PATH
-SAVE_SYNC_PUBLIC_HOST
-SAVE_SYNC_PUBLIC_BASE_URL
-SAVE_SYNC_TRAEFIK_DYNAMIC_DIR
-SAVE_SYNC_PROXY_NETWORK
-SAVE_SYNC_AUTHENTIK_FORWARD_AUTH_URL
-SAVE_SYNC_WEB_USERS
-SAVE_SYNC_USER_IDENTITIES_JSON
-```
-
-Si `.env` todavía no existe, también puedes crearlo con secretos aleatorios:
-
-```bash
 config/deploy.sh --init-env
 ```
 
-`--init-env` solo puede crear un `.env` inexistente, establece modo `0600` y
-genera valores independientes para proxy y CSRF. Después revisa los valores no
-secretos y despliega:
+Revisa `.env` y despliega:
 
 ```bash
 config/deploy.sh
 ```
 
-El almacenamiento debe ser una ruta absoluta, privada y exterior al directorio
-público de la web. El script construye el contenedor, prepara permisos, publica
-la ruta dinámica de Traefik de forma atómica y ejecuta verificaciones HTTPS.
+Para validar el proyecto sin proxy, dominio ni PalServer:
 
-La ruta canónica queda bajo el `gameKey`:
-
-```text
-API:   https://sync.example.com/api/games/palworld
-Panel: https://sync.example.com/games/palworld
+```bash
+bash scripts/local-e2e.sh
 ```
 
-`config/games/palworld.json` declara el nombre del juego, campo de identidad,
-regex y normalización. La configuración incluida mantiene `/api/palworld` como
-alias de compatibilidad, aunque los clientes nuevos usan la ruta canónica.
+### 2. Cliente Windows
 
-Para una instalación detallada y rollback, consulta
-[docs/OPERATIONS.md](docs/OPERATIONS.md).
-
-## Identidades y retención
-
-`SAVE_SYNC_WEB_USERS` define la allowlist y los roles:
-
-```dotenv
-SAVE_SYNC_WEB_USERS=admin:admin,player:player
-```
-
-`SAVE_SYNC_USER_IDENTITIES_JSON` separa usuario técnico, nombre mostrado y slot
-de retención:
-
-```json
-{
-  "admin": {"displayName": "Host A", "slot": "host-a"},
-  "player": {"displayName": "Host B", "slot": "host-b"}
-}
-```
-
-Varios alias pueden compartir el mismo `slot`. Tras publicar correctamente, se
-conserva el ZIP más reciente de cada slot configurado. La base desplegada para
-un proyecto nuevo no contiene usuarios reales ni tokens activos.
-
-Esta política es un límite deliberado de espacio: no existe una marca
-`protected` que permita acumular copias adicionales. Con dos slots hay como
-máximo dos ZIP canónicos, aunque ambos pueden corresponder a versiones no
-consecutivas. Para conservar más historial hay que copiarlo a un sistema de
-backup externo; no se debe ampliar silenciosamente el volumen operativo.
-
-## Cliente Windows
-
-1. Copia `client/config.example.json` como `client/config.json`.
-2. Selecciona `Adapter=palworld` y ajusta las rutas de PalServer y la URL.
-3. Ejecuta `client/Configurar-secretos.cmd` bajo el usuario de Windows que
-   operará el servidor.
-4. Ejecuta `client/Probar-conexion.cmd`.
-5. Inicia las sesiones mediante `client/Iniciar-PalworldSync.cmd`.
-
-El token web y la contraseña REST local se guardan cifrados con DPAPI y ACL
-restringida en `client/data/secrets.json`. Ese archivo no puede trasladarse a
-otro usuario/equipo y nunca debe versionarse.
+1. Descarga y extrae `dedicated-server-save-sync-client-v2.2.0.zip`.
+2. Copia `client/config.example.json` a `client/config.json`.
+3. Configura la URL pública, la ruta de PalServer y `Adapter=palworld`.
+4. Ejecuta `client/Configurar-secretos.cmd`.
+5. Ejecuta `client/Probar-conexion.cmd`.
+6. Inicia con `client/Iniciar-PalworldSync.cmd`.
 
 El flujo normal es:
 
 ```text
 status → lock → descarga si procede → arranque → heartbeat
-→ REST save/shutdown → ZIP/SHA-256 → upload
+→ save/shutdown REST → ZIP/SHA-256 → upload
 ```
 
-El cliente verifica el `worldguid` real mediante la REST API local de Palworld
-antes de permitir la sesión y antes de publicar. El puerto REST debe escuchar
-solo en localhost; no debe abrirse en el router.
+El cliente comprueba el `worldGuid` real mediante la REST local de Palworld antes de permitir una sesión y antes de publicar. **No abras el puerto REST de Palworld en el router**.
 
-Más detalles y recuperación de sesiones pendientes en
-[client/README.md](client/README.md).
+Consulta [client/README.md](client/README.md) y [docs/OPERATIONS.md](docs/OPERATIONS.md) antes del primer uso real.
 
-## Adaptación a otros juegos
+## Backups
 
-El backend implementa primitivas generales —versión, lock, identidad,
-integridad, publicación atómica y auditoría—. El lanzador `SyncGame.ps1`
-selecciona una integración bajo `client/adapters/<gameKey>`; la incluida aporta
-la localización del mundo, REST save/shutdown y `worldGuid` de Palworld.
+`SAVE_SYNC_RETENTION_PER_SLOT` limita cuántas versiones operativas se conservan por host/slot.
 
-La frontera operativa es deliberada: **una instancia y un volumen por juego**.
-Para añadir otro juego se crea otro JSON en `config/games/`, otro adaptador de
-cliente y otro despliegue con `SAVE_SYNC_GAME_KEY`, almacenamiento y proyecto
-Compose distintos. Esta separación evita que locks, restauraciones o fallos de
-un título afecten a otro.
+`SAVE_SYNC_POST_PUBLISH_COMMAND` permite lanzar un backup externo después de una publicación confirmada, por ejemplo con `restic`. El hook no puede convertir un upload ya confirmado en error: su resultado se audita por separado.
 
-No basta con cambiar nombres. Para otro juego hay que identificar:
+El panel y `GET /backup-status` distinguen:
 
-1. Qué conjunto de archivos forma una partida consistente.
-2. Cómo ordenar un guardado y confirmar que el proceso terminó.
-3. Qué identificador estable evita mezclar mundos o campañas.
-4. Qué archivos temporales/backups internos deben excluirse.
-5. Cómo restaurar de forma segura sin escribir mientras el servidor está vivo.
+- si el backup automático está habilitado **ahora**;
+- si el hook de la versión actual terminó correctamente;
+- pendientes activos;
+- markers vencidos;
+- último intento y último éxito conocido.
 
-La guía y el checklist están en
-[docs/ADAPTING-OTHER-GAMES.md](docs/ADAPTING-OTHER-GAMES.md).
+`latestVersionBackedUp=true` significa “el hook confirmó éxito”, no “se acaba de consultar restic y el snapshot continúa disponible”.
 
-## Desarrollo y pruebas
+## Seguridad
 
-Backend:
+No publiques nunca:
+
+- `.env`, `client/config.json` o `client/data/secrets.json`;
+- tokens, contraseñas o cabeceras `Authorization`;
+- saves, ZIP, SQLite, logs completos ni rutas de producción;
+- GUID, IP, dominio o nombres personales reales cuando abras una incidencia.
+
+El repositorio ejecuta Ruff, pytest con cobertura mínima del 85 %, `pip-audit`, Docker E2E, Pester y Gitleaks sobre el historial Git.
+
+Para vulnerabilidades usa [SECURITY.md](SECURITY.md). Para soporte no sensible usa [GitHub Discussions](https://github.com/Ayerdi/dedicated-server-save-sync/discussions) o las [incidencias](https://github.com/Ayerdi/dedicated-server-save-sync/issues).
+
+## Alcance del proyecto
+
+El backend ya contiene primitivas genéricas (`gameKey`, `saveIdentity`, adaptadores), y se conserva documentación sobre cómo estudiar otros juegos. Sin embargo, **la versión pública estable de este repositorio se considera la implementación de referencia de Palworld**.
+
+Los rediseños que impliquen instalación multi-juego, discovery automático, múltiples instancias de servidor o un agente multiplataforma no forman parte del roadmap de mantenimiento de este repositorio.
+
+## Desarrollo
 
 ```bash
 python3 -m venv .venv
@@ -244,55 +150,32 @@ pip install --require-hashes -r requirements-dev.txt
 ruff check save_sync tests wsgi.py
 python -m pytest -q
 pip-audit -r requirements.txt --progress-spinner=off
-```
-
-Cliente, desde Windows PowerShell con Pester 5:
-
-```powershell
-Invoke-Pester -Path .\client -CI
-```
-
-También debe validarse:
-
-```bash
-docker compose config --quiet
-docker build -t dedicated-server-save-sync:test .
+bash scripts/run-gitleaks.sh
 bash scripts/local-e2e.sh
 ```
 
-La CI ejecuta lint, cobertura mínima del 85 %, auditoría de dependencias, suite
-backend, build del contenedor, E2E aislado, Pester y detección de secretos.
-Consulta [SECURITY.md](SECURITY.md) antes de publicar cambios.
+En Windows:
 
-## Estado y límites
-
-- El adaptador Palworld es la versión `1.2.0` e incorpora la selección preferente del
-  mundo remoto cuando existen varios mundos locales.
-- El backend no interpreta `Level.sav`; compara el GUID declarado por un cliente
-  autenticado con la autoridad registrada.
-- La carpeta del mundo es una convención usada por el cliente, no una prueba
-  criptográfica del contenido.
-- SQLite está pensado para una única instancia del servicio sobre almacenamiento
-  local. No se admite un volumen de red ni réplicas activas del backend.
-- No hay expirador periódico: los locks caducados se limpian transaccionalmente
-  al acceder a las operaciones relevantes.
+```powershell
+Import-Module Pester -RequiredVersion 5.9.0
+Invoke-Pester -Path .\client -CI
+```
 
 ## Documentación
 
+- [Índice](docs/INDEX.md)
 - [Arquitectura e invariantes](docs/ARCHITECTURE.md)
-- [Contrato API](docs/API.md)
+- [Contrato HTTP](docs/API.md)
 - [Despliegue y operación](docs/OPERATIONS.md)
 - [Desarrollo local](docs/LOCAL-DEVELOPMENT.md)
 - [Migraciones](docs/MIGRATIONS.md)
 - [Adaptación a otros juegos](docs/ADAPTING-OTHER-GAMES.md)
 - [Releases](docs/RELEASES.md)
 - [Checklist de publicación](docs/PUBLICATION.md)
-- [Handoff para otro agente](docs/AGENT-HANDOFF.md)
 - [Seguridad](SECURITY.md)
-- [Cambios](CHANGELOG.md)
+- [Soporte](SUPPORT.md)
+- [Contribuir](CONTRIBUTING.md)
 
 ## Licencia
 
-El código y la documentación de este repositorio se distribuyen bajo la
-[Apache License 2.0](LICENSE). La licencia del proyecto no concede derechos
-sobre Palworld ni sobre ninguna otra marca, juego o contenido guardado.
+Código y documentación: [Apache License 2.0](LICENSE).

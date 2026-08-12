@@ -1,16 +1,42 @@
 # Contribuir
 
-Gracias por ayudar a mejorar Dedicated Server Save Sync. Antes de proponer un
-cambio, lee [SECURITY.md](SECURITY.md) y las invariantes de
+Gracias por ayudar a mantener Dedicated Server Save Sync.
+
+`v2.2.0` marca la implementación estable de referencia para Palworld. Este
+repositorio acepta mantenimiento, no un rediseño de producto.
+
+Antes de proponer un cambio, lee [SECURITY.md](SECURITY.md) y
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Alcance aceptado
+
+Son apropiados:
+
+- bugs y regresiones;
+- seguridad;
+- compatibilidad con nuevas versiones de Palworld;
+- dependencias;
+- tests;
+- documentación;
+- pequeñas mejoras operativas que preserven el modelo actual.
+
+Quedan fuera del roadmap de este repositorio:
+
+- instalación multi-juego en una sola instancia;
+- discovery automático universal de saves;
+- múltiples `ServerInstance` por backend;
+- sustitución del cliente por un agente multiplataforma;
+- cambios incompatibles de arquitectura para convertirlo en una plataforma.
+
+La documentación de `docs/ADAPTING-OTHER-GAMES.md` se conserva como referencia
+técnica del diseño genérico existente.
 
 ## Antes de abrir una incidencia
 
 - No adjuntes saves, ZIP, bases SQLite, tokens, contraseñas ni `.env` reales.
-- Usa el formulario de seguridad privado para vulnerabilidades o información
+- Usa el reporte privado de seguridad para vulnerabilidades o información
   sensible.
-- Para un juego nuevo, aporta evidencia de cómo guarda, cierra y distingue sus
-  campañas; poder comprimir una carpeta no demuestra consistencia.
+- Redacta GUIDs, dominios, rutas, IPs y nombres reales.
 
 ## Desarrollo
 
@@ -25,7 +51,7 @@ bash scripts/run-gitleaks.sh
 bash scripts/local-e2e.sh
 ```
 
-Las pruebas PowerShell requieren Windows PowerShell 5.1 y Pester 5.9.0:
+Pruebas Windows:
 
 ```powershell
 Import-Module Pester -RequiredVersion 5.9.0
@@ -35,25 +61,24 @@ Invoke-Pester -Path .\client -CI
 ## Pull requests
 
 1. Crea una rama descriptiva.
-2. Añade pruebas para cualquier cambio de comportamiento.
-3. Mantén compatibilidad con Windows PowerShell 5.1 en el cliente.
-4. Actualiza documentación, esquema y rollback cuando corresponda.
+2. Añade pruebas para cambios de comportamiento.
+3. Mantén Windows PowerShell 5.1 en el cliente.
+4. Actualiza documentación y rollback cuando corresponda.
 5. Ejecuta las comprobaciones anteriores.
-6. Completa la plantilla de PR sin incluir datos del despliegue.
+6. No incluyas datos del despliegue real.
 
-Los commits deben ser pequeños y usar mensajes convencionales, por ejemplo
-`fix: reject stale upload` o `feat: add example-game adapter`.
+Los commits deben ser pequeños y descriptivos, por ejemplo
+`fix: reject stale upload`.
 
-Salvo que se indique expresamente lo contrario, toda contribución enviada para
-su inclusión se licencia bajo [Apache-2.0](LICENSE), conforme a la sección 5 de
-la licencia.
+Toda contribución aceptada se licencia bajo [Apache-2.0](LICENSE), conforme a la
+sección 5 de la licencia.
 
 ## Dependencias
 
-Edita `requirements.in` o `requirements-dev.in` y regenera los locks:
+Edita `requirements.in` o `requirements-dev.in` y regenera locks:
 
 ```bash
 bash scripts/update-dependencies.sh
 ```
 
-No edites manualmente los archivos compilados `requirements*.txt`.
+No edites manualmente `requirements*.txt`.
