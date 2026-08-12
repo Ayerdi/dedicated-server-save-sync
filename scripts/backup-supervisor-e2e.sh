@@ -75,11 +75,12 @@ wait_backup_completed() {
     local value
     value="$(curl --fail-with-body --silent --show-error \
       -H "${AUTH_HEADER}" "${BASE_URL}/backup-status")"
-    if python3 - "${version}" <<'PY' <<<"${value}"
+    if python3 - "${version}" "${value}" <<'PY'
 import json
 import sys
-value = json.load(sys.stdin)
+
 version = int(sys.argv[1])
+value = json.loads(sys.argv[2])
 raise SystemExit(
     0
     if value["latestPublishedVersion"] == version
@@ -142,23 +143,22 @@ supervisor_after="$("${compose[@]}" ps -q backup-supervisor)"
 wait_backup_completed 1
 
 # Caso 2: también el supervisor puede morir; la fila durable debe sobrevivir y
-# ser reclamada por la nueva instancia, que ejecutará el intento 2.
+# ser reclamada por la nueva ejecución, que generará el intento 2. Docker puede
+# reiniciar el mismo container-id, por eso se valida semántica, no runtime-id.
 publish_version "supervisor-crash" >/dev/null
 wait_exec_file "/data/save-sync/temporary/backup-e2e-started-v2-1"
-first_supervisor="$("${compose[@]}" ps -q backup-supervisor)"
 "${compose[@]}" kill backup-supervisor >/dev/null || true
 "${compose[@]}" up --detach --wait backup-supervisor >/dev/null
 wait_exec_file "/data/save-sync/temporary/backup-e2e-started-v2-2"
-second_supervisor="$("${compose[@]}" ps -q backup-supervisor)"
-[[ -n "${second_supervisor}" && "${first_supervisor}" != "${second_supervisor}" ]]
 wait_backup_completed 2
 
 history_json="$(curl --fail-with-body --silent --show-error \
   -H "${AUTH_HEADER}" "${BASE_URL}/history")"
-python3 - <<'PY' <<<"${history_json}"
+python3 - "${history_json}" <<'PY'
 import json
 import sys
-value = json.load(sys.stdin)
+
+value = json.loads(sys.argv[1])
 assert [item["version"] for item in value["versions"]] == [2], value
 PY
 
