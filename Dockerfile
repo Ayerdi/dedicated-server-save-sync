@@ -9,10 +9,45 @@ WORKDIR /app
 RUN useradd --system --uid 10001 --create-home savesync
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt
-RUN apt-get update \
- && apt-get install -y --no-install-recommends restic \
- && apt-get clean \
- && rm -rf /var/lib/apt/lists/*
+
+# Binario oficial fijado por versión y SHA-256. Se soportan las dos
+# arquitecturas de despliegue del proyecto; cualquier asset distinto hace
+# fallar el build en vez de aceptar silenciosamente otra versión de restic.
+ARG RESTIC_VERSION=0.18.0
+ARG TARGETARCH
+RUN RESTIC_VERSION="${RESTIC_VERSION}" TARGETARCH="${TARGETARCH}" python - <<'PY'
+import bz2
+import hashlib
+import os
+import pathlib
+import urllib.request
+
+version = os.environ["RESTIC_VERSION"]
+arch = os.environ["TARGETARCH"] or "amd64"
+checksums = {
+    "amd64": "98f6dd8bf5b59058d04bfd8dab58e196cc2a680666ccee90275a3b722374438e",
+    "arm64": "ce18179c25dc5f2e33e3c233ba1e580f9de1a4566d2977e8d9600210363ec209",
+}
+try:
+    expected = checksums[arch]
+except KeyError as exc:
+    raise SystemExit(f"Arquitectura restic no soportada: {arch}") from exc
+name = f"restic_{version}_linux_{arch}.bz2"
+url = f"https://github.com/restic/restic/releases/download/v{version}/{name}"
+request = urllib.request.Request(
+    url, headers={"User-Agent": "dedicated-server-save-sync-build"}
+)
+with urllib.request.urlopen(request, timeout=60) as response:
+    compressed = response.read()
+actual = hashlib.sha256(compressed).hexdigest()
+if actual != expected:
+    raise SystemExit(f"SHA-256 de restic inválido: {actual} != {expected}")
+target = pathlib.Path("/usr/local/bin/restic")
+target.write_bytes(bz2.decompress(compressed))
+target.chmod(0o755)
+PY
+RUN RESTIC_VERSION="${RESTIC_VERSION}" python -c "import os,subprocess; out=subprocess.check_output(['restic','version'],text=True).split(); assert out[1] == os.environ['RESTIC_VERSION'], out"
+
 COPY save_sync ./save_sync
 COPY wsgi.py ./
 RUN mkdir -p /data/save-sync/backups /data/save-sync/temporary \
