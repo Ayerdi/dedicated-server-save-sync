@@ -9,6 +9,13 @@ services:
       - save_sync_local_data:/data/save-sync
       - ./config/games/${SAVE_SYNC_GAME_KEY:-palworld}.json:/app/game.json:ro
 
+  backup-supervisor:
+    env_file:
+      - path: ${SAVE_SYNC_LOCAL_ENV_FILE:-.env.local}
+        required: true
+    volumes:
+      - save_sync_local_data:/data/save-sync
+
 networks:
   traefik_proxy:
     name: ${SAVE_SYNC_LOCAL_NETWORK:-save-sync-local}
