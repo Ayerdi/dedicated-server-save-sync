@@ -15,6 +15,7 @@ services:
         required: true
     volumes:
       - save_sync_local_data:/data/save-sync
+      - ./scripts/backup-supervisor-e2e-hook.py:/app/backup-supervisor-e2e-hook.py:ro
 
 networks:
   traefik_proxy:
