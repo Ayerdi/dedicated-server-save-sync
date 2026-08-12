@@ -1,20 +1,25 @@
-name: Propuesta de mejora
-description: Propón un cambio general del motor o su operación.
-title: "[Feature]: "
+name: Mejora de mantenimiento
+description: Propón una mejora acotada para la referencia estable de Palworld.
+title: "[Enhancement]: "
 labels:
   - enhancement
 body:
+  - type: markdown
+    attributes:
+      value: |
+        v2.2.0 está en mantenimiento. No uses este formulario para rediseños
+        multi-juego, discovery universal, múltiples instancias o un agente nuevo.
   - type: textarea
     id: problem
     attributes:
       label: Problema
-      description: Explica el riesgo o limitación actual, no solo la solución.
+      description: Explica el riesgo o limitación actual.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Propuesta
+      label: Propuesta acotada
     validations:
       required: true
   - type: textarea
