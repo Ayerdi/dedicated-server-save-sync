@@ -469,9 +469,7 @@ def healthcheck():
             return False
         if not supervisor.schema_ready():
             return False
-        if not supervisor.command and supervisor.pending_work_exists():
-            return False
-        return True
+        return bool(supervisor.command) or not supervisor.pending_work_exists()
     except (OSError, RuntimeError, ValueError, sqlite3.Error):
         return False
 
