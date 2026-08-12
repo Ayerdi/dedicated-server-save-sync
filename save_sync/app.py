@@ -24,6 +24,11 @@ from flask import Flask, Response, g, jsonify, request, send_file
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from save_sync.retention import (
+    prune_canonical_versions_locked,
+    reconcile_unreferenced_files_locked,
+)
+
 GAME_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 SCHEMA_VERSION = 3
 
@@ -384,59 +389,37 @@ def create_app(config=None):
     backup_timeout = int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"])
 
     def cleanup_canonical_versions():
-        """Conserva las últimas N versiones de cada slot configurado."""
-        with transaction(immediate=True) as db:
-            # Purga first: marca como huérfanas las filas cuyo backup excedió el
-            # timeout (p. ej. worker reemplazado sin su thread). Esto evita que
-            # una versión protegida eternamente bloquee la retención.
-            stale_before = iso(
-                utcnow() - timedelta(seconds=backup_timeout + 60)
-            )
-            db.execute(
-                "DELETE FROM pending_backups WHERE started_at < ?",
-                (stale_before,),
-            )
-            rows = db.execute(
-                "SELECT v.version,v.path,u.username FROM versions v "
-                "JOIN users u ON u.id=v.updated_by ORDER BY v.version DESC"
-            ).fetchall()
-            pending_backups = {
-                row[0] for row in db.execute("SELECT version FROM pending_backups")
-            }
-            kept_per_slot = {}
-            for row in rows:
-                slot = identity_for_username(row["username"])["slot"]
-                kept = kept_per_slot.get(slot, 0)
-                if kept >= retention_per_slot and row["version"] not in pending_backups:
-                    db.execute(
-                        "DELETE FROM versions WHERE version=?", (row["version"],)
-                    )
-                else:
-                    kept_per_slot[slot] = kept + 1
-            referenced = {
-                storage / row["path"]
-                for row in db.execute("SELECT path FROM versions").fetchall()
-            }
-            # El glob y los unlink permanecen bajo BEGIN IMMEDIATE. Upload y
-            # restore mueven su ZIP final bajo el mismo lock, por lo que no
-            # pueden publicar entre este snapshot y la reconciliación.
-            candidates = set((storage / "backups").glob("save-v*.zip"))
-            for path in candidates - referenced:
-                try:
-                    path.unlink(missing_ok=True)
-                except OSError:
-                    # La metadata obsoleta se confirma igualmente. El ZIP
-                    # huérfano se reintentará en el siguiente cleanup/arranque.
-                    app.logger.exception("No se pudo eliminar ZIP obsoleto %s", path)
+        """Conserva las últimas N versiones por slot con filesystem best-effort.
 
-    # Recupera limpiezas interrumpidas y la tabla de backups pendientes.
+        Un pending_backups no caduca por cleanup: es una cola durable y protege
+        su ZIP hasta que el supervisor externo registre éxito o fallo. La
+        retención de metadata se confirma antes de cualquier unlink físico.
+        """
+        with transaction(immediate=True) as db:
+            prune_canonical_versions_locked(
+                db,
+                retention_per_slot,
+                identity_for_username,
+            )
+
+        # Segunda fase, después del COMMIT de metadata. Un nuevo BEGIN IMMEDIATE
+        # vuelve a validar todas las referencias antes de tocar el filesystem.
+        # Si esta fase falla, queda como máximo un ZIP huérfano recuperable.
+        try:
+            with transaction(immediate=True) as db:
+                reconcile_unreferenced_files_locked(db, storage, app.logger)
+        except Exception:
+            app.logger.exception(
+                "La retención de metadata quedó confirmada, pero falló la "
+                "reconciliación física; se reintentará en un cleanup posterior"
+            )
+
+    # Recupera limpiezas interrumpidas. Los backups pendientes no se purgan:
+    # pertenecen al supervisor durable y sobreviven a workers/reinicios.
     cleanup_canonical_versions()
 
     def terminate_process_group(process, sigterm_timeout=10, sigkill_timeout=10):
-        """Envia SIGTERM al grupo de proceso del hijo (start_new_session) y, tras
-        el periodo de gracia, SIGKILL al grupo completo. process.wait() solo
-        vigila al proceso directo, por lo que un nieto que ignore SIGTERM
-        quedaría si no se mata el grupo entero. Nunca propaga errores."""
+        """Ruta inline usada por tests; producción delega en backup-supervisor."""
         pgid = process.pid
         try:
             pgid = os.getpgid(process.pid)
@@ -463,10 +446,12 @@ def create_app(config=None):
             )
 
     def arm_backup_marker(db, version):
-        """Marca la versión como pendiente de backup cuando el hook está activo.
-        Se llama dentro de la transacción de publicación/restore para que la
-        protección contra la retención sea atómica con la creación de la
-        versión."""
+        """Encola durablemente la versión cuando el backup externo está activo.
+
+        La fila se crea dentro de la misma transacción que la publicación para
+        que retención nunca pueda retirar el ZIP antes de que el supervisor lo
+        procese.
+        """
         if not str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip():
             return
         db.execute(
@@ -475,8 +460,7 @@ def create_app(config=None):
         )
 
     def release_backup_marker(version, success, exit_code=0, timed_out=False, reason=None):
-        """Desmarca el backup y audita el resultado. Best-effort: nunca invalida
-        una publicación ya confirmada."""
+        """Soporte inline de tests; producción finaliza desde backup-supervisor."""
         details = {
             "version": version,
             "exitCode": exit_code,
@@ -503,6 +487,7 @@ def create_app(config=None):
             )
 
     def await_backup_result(process, version):
+        """Soporte inline de tests; no se usa por workers de producción."""
         exit_code = 0
         timed_out = False
         success = False
@@ -511,13 +496,9 @@ def create_app(config=None):
             success = exit_code == 0
         except subprocess.TimeoutExpired:
             timed_out = True
-            # El proceso arranca con start_new_session=True, así que su PGID es
-            # su propio PID. Se termina el grupo entero para no dejar huérfanos
-            # que sigan usando el ZIP publicado.
             terminate_process_group(process, sigterm_timeout=10)
             try:
                 exit_code = process.wait(timeout=5)
-                # timed_out ya implica fracaso; success se mantiene False.
             except subprocess.TimeoutExpired:
                 exit_code = -1
                 app.logger.warning(
@@ -542,7 +523,11 @@ def create_app(config=None):
                 )
 
     def run_post_publish_hook(version, relative_path, save_identity):
-        """Lanza el backup externo; nunca invalida la publicación confirmada."""
+        """Ejecutor inline exclusivo de TESTING.
+
+        En producción el worker únicamente deja pending_backups y el sidecar
+        save_sync.backup_supervisor ejecuta y supervisa el comando.
+        """
         command = str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip()
         if not command:
             return
@@ -569,11 +554,8 @@ def create_app(config=None):
                 close_fds=True,
             )
         except Exception:
-            # Popen()/shlex.split() falló: no hay proceso que esperar. La
-            # versión ya está publicada; liberamos el marcador best-effort y
-            # nunca devolvemos error al cliente.
             app.logger.exception(
-                "Falló el hook post-publicación; la versión %s permanece publicada",
+                "Falló el hook post-publicación de test para la versión %s",
                 version,
             )
             release_backup_marker(version, False, reason="hook_launch_failed")
@@ -593,12 +575,8 @@ def create_app(config=None):
                 daemon=True,
             ).start()
         except Exception:
-            # La publicación ya confirmó (COMMIT hecho). Matamos el proceso
-            # best-effort, liberamos el marcador y limpiamos, pero NUNCA
-            # devolvemos 500: la partida se publicó correctamente.
             app.logger.exception(
-                "No se pudo iniciar el supervisor de backup para la versión %s; "
-                "la versión permanece publicada",
+                "No se pudo iniciar el supervisor inline de test para la versión %s",
                 version,
             )
             terminate_process_group(process)
@@ -759,8 +737,6 @@ def create_app(config=None):
             try:
                 is_stale = parse_iso(row["started_at"]) < stale_before
             except (AttributeError, TypeError, ValueError):
-                # Un marcador ilegible tampoco debe presentarse como backup
-                # activo: la observabilidad es deliberadamente conservadora.
                 is_stale = True
             (stale_pending if is_stale else pending).append(item)
 
@@ -1429,11 +1405,8 @@ def create_app(config=None):
                     "INSERT INTO current_save(singleton,version) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET version=excluded.version",
                     (new_version,),
                 )
-                # Marca de backup ATÓMICA con la publicación: la protección
-                # contra la retención debe existir desde el mismo instante en
-                # que la versión es viable. No insertarlo aquí fuera permitiría
-                # que otro publish del mismo slot eliminara el ZIP antes de que
-                # run_post_publish_hook() armara el marcador.
+                # La cola de backup nace ATÓMICAMENTE con la publicación. En
+                # producción la consumirá el sidecar independiente de Gunicorn.
                 arm_backup_marker(db, new_version)
                 db.execute("DELETE FROM active_lock WHERE singleton=1")
                 audit(
@@ -1448,8 +1421,6 @@ def create_app(config=None):
                 updated_at = db.execute(
                     "SELECT updated_at FROM versions WHERE version=?", (new_version,)
                 ).fetchone()[0]
-            # A partir de aquí el ZIP es la versión vigente confirmada. Nunca se
-            # compensa aunque la limpieza posterior falle.
             published_final = None
             try:
                 cleanup_canonical_versions()
@@ -1457,7 +1428,10 @@ def create_app(config=None):
                 app.logger.exception(
                     "La limpieza post-publicación falló; la versión confirmada se conserva"
                 )
-            run_post_publish_hook(new_version, relative, save_identity)
+            # Los tests unitarios conservan el ejecutor inline para cubrir
+            # timeout/process-group; producción jamás liga el backup al worker.
+            if app.config.get("TESTING"):
+                run_post_publish_hook(new_version, relative, save_identity)
             result = {
                 "ok": True,
                 "previousVersion": base,
@@ -1486,14 +1460,14 @@ def create_app(config=None):
         versions = []
         for r in rows:
             item = {
-                    "version": r["version"],
-                    "updatedBy": display_username(r["username"]),
-                    "updatedAt": r["updated_at"],
-                    "size": r["size"],
-                    "sha256": r["sha256"],
-                    "baseVersion": r["base_version"],
-                    "restoredFromVersion": r["restored_from_version"],
-                }
+                "version": r["version"],
+                "updatedBy": display_username(r["username"]),
+                "updatedAt": r["updated_at"],
+                "size": r["size"],
+                "sha256": r["sha256"],
+                "baseVersion": r["base_version"],
+                "restoredFromVersion": r["restored_from_version"],
+            }
             item.update(identity_json(r["save_identity"]))
             versions.append(item)
         return jsonify(gameKey=game_key, identityField=identity_field, versions=versions)
@@ -1530,8 +1504,6 @@ def create_app(config=None):
         final = None
         temp = None
         try:
-            # Lectura inicial breve; el hash y la copia grande se realizan sin
-            # retener el bloqueo de escritura de SQLite.
             with transaction(immediate=True) as db:
                 lock = active_lock(db)
                 if lock:
@@ -1694,7 +1666,6 @@ def create_app(config=None):
                     "INSERT INTO current_save VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET version=excluded.version",
                     (new_version,),
                 )
-                # Marcador de backup atómico con la restauración publicada.
                 arm_backup_marker(db, new_version)
                 audit(
                     db,
@@ -1718,7 +1689,8 @@ def create_app(config=None):
             app.logger.exception(
                 "La limpieza posterior a restauración falló; la versión confirmada se conserva"
             )
-        run_post_publish_hook(new_version, relative, source["save_identity"])
+        if app.config.get("TESTING"):
+            run_post_publish_hook(new_version, relative, source["save_identity"])
         result = {
             "ok": True,
             "version": new_version,
@@ -1740,7 +1712,7 @@ def create_app(config=None):
                 "SELECT * FROM versions WHERE version=?", (version,)
             ).fetchone()
             if not row:
-               return error("version_not_found", "Versión no encontrada.", 404)
+                return error("version_not_found", "Versión no encontrada.", 404)
             if version == current["version"]:
                 return error(
                     "version_current",

@@ -7,6 +7,7 @@ LOCAL_PORT="${SAVE_SYNC_LOCAL_PORT:-18080}"
 export SAVE_SYNC_LOCAL_PORT="${LOCAL_PORT}"
 export SAVE_SYNC_LOCAL_ENV_FILE=".env.local.example"
 export SAVE_SYNC_CONTAINER_NAME="save_sync_local_e2e"
+export SAVE_SYNC_BACKUP_CONTAINER_NAME="save_sync_local_e2e_backup"
 export SAVE_SYNC_LOCAL_NETWORK="save-sync-local-e2e"
 export SAVE_SYNC_LOCAL_VOLUME="save-sync-local-e2e-data"
 

@@ -529,12 +529,10 @@ def test_backup_hook_timeout_terminates_and_audits_failure(app, monkeypatch):
     assert process.calls >= 3
 
 
-def test_orphan_pending_backups_are_purged_by_cleanup(app):
-    from save_sync.app import iso, utcnow
+def test_stale_pending_backup_is_preserved_until_supervisor_resolves_it(app):
+    from save_sync.backup_supervisor import BackupSupervisor
 
     app.config["SAVE_SYNC_RETENTION_PER_SLOT"] = 1
-    # Comando de backup vacío: el hook no lanza proceso y la prueba es
-    # determinista. La purga stale ocurre dentro de cleanup_canonical_versions.
     publish(app, b"v1", "admin")
     publish(app, b"v2", "admin")
     with app.extensions["save_sync_connect"]() as db:
@@ -544,6 +542,36 @@ def test_orphan_pending_backups_are_purged_by_cleanup(app):
             (2, old_started),
         )
     publish(app, b"v3", "admin")
+
+    storage = Path(app.config["SAVE_SYNC_STORAGE_PATH"])
+    with app.extensions["save_sync_connect"]() as db:
+        pending = {
+            row[0] for row in db.execute("SELECT version FROM pending_backups")
+        }
+        versions = [
+            row[0] for row in db.execute("SELECT version FROM versions ORDER BY version")
+        ]
+    assert pending == {2}
+    assert versions == [2, 3]
+    assert (storage / "backups/save-v000002.zip").is_file()
+
+    class SuccessfulProcess:
+        pid = 999999
+
+        def wait(self, timeout=None):
+            return 0
+
+    supervisor = BackupSupervisor(
+        storage_path=storage,
+        db_path=app.config["SAVE_SYNC_DB_PATH"],
+        command="true",
+        timeout_seconds=30,
+        poll_seconds=0.01,
+        retention_per_slot=1,
+        popen=lambda *args, **kwargs: SuccessfulProcess(),
+    )
+    assert supervisor.run_once() is True
+
     with app.extensions["save_sync_connect"]() as db:
         pending = {
             row[0] for row in db.execute("SELECT version FROM pending_backups")
@@ -553,6 +581,8 @@ def test_orphan_pending_backups_are_purged_by_cleanup(app):
         ]
     assert pending == set()
     assert versions == [3]
+    assert not (storage / "backups/save-v000002.zip").exists()
+    assert (storage / "backups/save-v000003.zip").is_file()
 
 
 def test_post_publish_hook_popen_failure_clears_pending_backups(app, monkeypatch):

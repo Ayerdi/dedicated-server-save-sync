@@ -28,6 +28,7 @@ PREVIOUS_ROUTE="${RUNTIME_DIR}/save-sync-${GAME_KEY}.previous.yml"
 TRAEFIK_ROUTE="${TRAEFIK_DYNAMIC_DIR}/save-sync-${GAME_KEY}.yml"
 COMPOSE_PROJECT="${SAVE_SYNC_COMPOSE_PROJECT:-save-sync-${GAME_KEY}}"
 export SAVE_SYNC_CONTAINER_NAME="save_sync_${GAME_KEY}"
+export SAVE_SYNC_BACKUP_CONTAINER_NAME="save_sync_${GAME_KEY}_backup"
 
 log() {
   printf '[save-sync-rollback] %s\n' "$*"
@@ -53,4 +54,4 @@ fi
 
 cd "${PROJECT_DIR}"
 docker compose -p "${COMPOSE_PROJECT}" down --remove-orphans
-log "Backend detenido sin eliminar volumenes ni datos; Traefik no se ha reiniciado."
+log "Backend y supervisor detenidos sin eliminar volumenes ni datos; Traefik no se ha reiniciado."
