@@ -1,30 +1,37 @@
-# Contrato API
+# HTTP API
 
-La base canónica contiene el juego configurado:
+The canonical base path includes the configured game:
 
 ```text
 https://sync.example.com/api/games/{gameKey}
 ```
 
-Para el adaptador incluido:
+For the included Palworld adapter:
 
 ```text
 https://sync.example.com/api/games/palworld
 ```
 
-Todas las llamadas del cliente envían
-`Authorization: Bearer <token>` y `Accept: application/json`. El token no se
-admite en URL. Los errores siempre tienen:
+Client requests send:
 
-```json
-{"error":"machine_code","message":"Descripción","details":{}}
+```http
+Authorization: Bearer <token>
+Accept: application/json
 ```
 
-## Identidad configurable
+Tokens are never accepted in the URL.
 
-Cada `config/games/{gameKey}.json` declara `identityField`, `identityPattern` y
-normalización. Todas las respuestas usan `saveIdentity` y también el nombre
-específico del adaptador. Palworld devuelve por tanto ambos:
+Errors use a stable machine-readable shape:
+
+```json
+{"error":"machine_code","message":"Human-readable explanation","details":{}}
+```
+
+## Save identity
+
+Each `config/games/{gameKey}.json` declares `identityField`, `identityPattern` and normalization. API responses always expose the generic `saveIdentity`; an adapter may expose its specific field too.
+
+Palworld example:
 
 ```json
 {
@@ -33,13 +40,13 @@ específico del adaptador. Palworld devuelve por tanto ambos:
 }
 ```
 
-## Estado
+## Status
 
 ```http
 GET /status
 ```
 
-Sin inicializar:
+Uninitialized response:
 
 ```json
 {
@@ -59,10 +66,9 @@ Sin inicializar:
 }
 ```
 
-Cuando está ocupado, `lock` contiene únicamente `owner`, `createdAt`,
-`lastHeartbeatAt` y `expiresAt`; nunca contiene `sessionId`.
+When locked, `lock` contains only `owner`, `createdAt`, `lastHeartbeatAt` and `expiresAt`. It never contains `sessionId`.
 
-## Adquirir lock
+## Acquire a lock
 
 ```http
 POST /lock
@@ -78,7 +84,7 @@ Content-Type: application/json
 ```json
 {
   "gameKey": "palworld",
-  "sessionId": "valor-opaco",
+  "sessionId": "opaque-value",
   "baseVersion": 12,
   "saveIdentity": "A7E97BAA767DB9029EF013BB71E993A0",
   "worldGuid": "A7E97BAA767DB9029EF013BB71E993A0",
@@ -86,10 +92,9 @@ Content-Type: application/json
 }
 ```
 
-Un lock activo devuelve `409 lock_occupied`. Solo el mismo usuario, token y
-`sessionId` pueden renovarlo, usarlo o liberarlo.
+An existing valid lock returns `409 lock_occupied`. Only the same authenticated user/token and matching `sessionId` may heartbeat, use or release it.
 
-## Heartbeat y unlock
+## Heartbeat and unlock
 
 ```http
 POST /heartbeat
@@ -98,24 +103,24 @@ Content-Type: application/json
 ```
 
 ```json
-{"sessionId":"valor-opaco"}
+{"sessionId":"opaque-value"}
 ```
 
-Heartbeat correcto:
+Successful heartbeat:
 
 ```json
 {"ok":true,"expiresAt":"2026-01-01T21:21:00Z"}
 ```
 
-Sesión incorrecta o caducada: `409 invalid_session` o `409 lock_expired`.
+Invalid or expired sessions return `409 invalid_session` or `409 lock_expired`.
 
-## Descargar vigente
+## Download the authoritative version
 
 ```http
 GET /download
 ```
 
-Cabeceras genéricas:
+Generic response headers:
 
 ```http
 X-Save-Sync-Version: 12
@@ -124,18 +129,18 @@ X-Save-Sync-Identity: A7E97BAA767DB9029EF013BB71E993A0
 Content-Disposition: attachment; filename="palworld-save-v12.zip"
 ```
 
-El adaptador Palworld añade por compatibilidad `X-Palworld-Version`,
-`X-Palworld-SHA256` y `X-Palworld-World-Guid`. Sin save devuelve
-`404 save_not_initialized`.
+The Palworld adapter also exposes compatibility headers `X-Palworld-Version`, `X-Palworld-SHA256` and `X-Palworld-World-Guid`.
 
-## Publicar
+An uninitialized save returns `404 save_not_initialized`.
+
+## Publish a version
 
 ```http
 POST /upload
 Content-Type: multipart/form-data
 ```
 
-Campos comunes obligatorios:
+Required common fields:
 
 ```text
 file
@@ -144,9 +149,7 @@ baseVersion
 sha256
 ```
 
-También se exige el campo declarado por el adaptador. Palworld usa `worldGuid`;
-el alias genérico `saveIdentity` también se acepta. `owner` es compatible pero
-la identidad real procede del token.
+The adapter identity field is also required. Palworld uses `worldGuid`; the generic alias `saveIdentity` is accepted too.
 
 `201 Created`:
 
@@ -164,54 +167,25 @@ la identidad real procede del token.
 }
 ```
 
-Conflicto de versión:
+A stale base returns `409 version_conflict`. A different save identity returns an adapter-specific identity conflict (Palworld: `world_guid_conflict`) without changing the current file, version or lock.
 
-```json
-{
-  "error": "version_conflict",
-  "message": "La versión remota ha cambiado.",
-  "details": {"expectedBaseVersion":13,"receivedBaseVersion":12}
-}
-```
+Other important failures:
 
-Conflicto de identidad:
-
-```json
-{
-  "error": "world_guid_conflict",
-  "message": "El ZIP pertenece a un mundo de Palworld diferente.",
-  "details": {
-    "identityField": "worldGuid",
-    "expectedSaveIdentity":"A7E97BAA767DB9029EF013BB71E993A0",
-    "receivedSaveIdentity":"B8F08CBB878ECA13AF1024CC82FAA4B1",
-    "expectedWorldGuid":"A7E97BAA767DB9029EF013BB71E993A0",
-    "receivedWorldGuid":"B8F08CBB878ECA13AF1024CC82FAA4B1"
-  }
-}
-```
-
-Los conflictos `409` no cambian ZIP, versión ni lock. Otros errores:
-
-- `400 invalid_save_identity` o parámetros ausentes;
+- `400 invalid_save_identity` or missing parameters;
 - `413 upload_too_large`;
-- `422 sha256_mismatch` o ZIP inválido;
+- `422 sha256_mismatch` or invalid ZIP;
 - `429 rate_limit_exceeded`;
 - `503 storage_unavailable`.
 
-Otros adaptadores usan `save_identity_conflict` con los campos genéricos
-`expectedSaveIdentity` y `receivedSaveIdentity`.
-
-## Historial
+## History and administration
 
 ```http
 GET /history
 ```
 
-Devuelve `gameKey`, `identityField` y `versions`. Cada versión contiene
-`version`, `saveIdentity`, el campo específico del adaptador, `updatedBy`,
-`updatedAt`, `size`, `sha256`, `baseVersion` y `restoredFromVersion`.
+Each version includes `version`, `saveIdentity`, adapter-specific identity, `updatedBy`, `updatedAt`, `size`, `sha256`, `baseVersion` and `restoredFromVersion`.
 
-Administración:
+Administrative operations:
 
 ```text
 GET    /history/{version}/download
@@ -224,14 +198,17 @@ DELETE /admin/tokens/{id}
 GET    /admin/audit?limit=100
 ```
 
-### Estado del backup externo
+Restore publishes a **new increasing version** with the same save identity.
+
+Creating a token returns its plaintext value once. History download/restore/delete, force-unlock, token management and audit endpoints require `admin`; normal game operations accept `admin` or `player`.
+
+## External-backup status
 
 ```http
 GET /backup-status
 ```
 
-Devuelve el estado observable del backup para que clientes y panel puedan
-responder si el supervisor confirmó correctamente el hook de la versión vigente:
+Representative response:
 
 ```json
 {
@@ -250,83 +227,46 @@ responder si el supervisor confirmó correctamente el hook de la versión vigent
     "exitCode": 0,
     "timedOut": false,
     "reason": null
-  },
-  "lastCompleted": {
-    "version": 13,
-    "completedAt": "2026-08-12T10:00:00Z",
-    "success": true,
-    "exitCode": 0,
-    "timedOut": false,
-    "reason": null
   }
 }
 ```
 
-`state` puede ser `not_initialized`, `disabled`, `pending`, `completed`,
-`failed` o `unknown`. `unknown` indica que el backup está habilitado pero no hay
-resultado auditable para la versión vigente. También se usa cuando el único
-marcador de esa versión está vencido (`started_at < ahora - (timeout + 60s)`).
-En ese caso `stalePending` es `true`, el marcador aparece en
-`stalePendingVersions` y no se cuenta como pendiente activo en la presentación.
+`state` may be `not_initialized`, `disabled`, `pending`, `completed`, `failed` or `unknown`.
 
-Los registros de `pending_backups` son una **cola durable**. `stalePending` es
-solo diagnóstico de antigüedad: ni este GET ni la retención purgan una fila por
-ser vieja. Si el web o `backup-supervisor` se reinician antes de registrar un
-resultado final, la fila y el ZIP protegido sobreviven y el supervisor vuelve a
-reclamar el trabajo. Por diseño el hook puede ejecutarse más de una vez tras un
-crash cuyo resultado quedó incierto.
+Important semantics:
 
-`enabled` representa la configuración **actual** del hook y es independiente
-del resultado histórico de la versión vigente. Por ejemplo, una versión que
-se respaldó correctamente puede seguir devolviendo `state="completed"` y
-`latestVersionBackedUp=true` después de desactivar el hook, mientras
-`enabled=false` advierte que las publicaciones siguientes no encolarán backup
-automático. Los clientes deben mostrar ambas dimensiones por separado.
+- `enabled` is the **current configuration** and is independent from the historical result of the current version;
+- `pending_backups` is a durable queue, not an expiring marker table;
+- `stalePending` is diagnostic only and does not authorize retention to delete the protected ZIP;
+- `latestVersionBackedUp=true` means the supervisor audited a successful hook result for the current version;
+- the endpoint does **not** query restic or prove that a remote snapshot still exists now;
+- an uncertain crash can cause the hook to run again after restart, so the hook must tolerate at-least-once execution.
 
-`lastAttempt`, `lastCompleted` y el resultado de la versión vigente se obtienen
-recorriendo la auditoría en orden descendente hasta encontrar los registros
-válidos necesarios; no se pierden éxitos antiguos por un límite fijo de 500
-eventos.
+This endpoint is read-only and requires authentication but not the administrator role.
 
-`latestVersionBackedUp=true` significa que el hook de la versión vigente
-terminó con éxito y ese resultado quedó auditado por el supervisor. El endpoint
-no consulta el repositorio restic ni verifica que el snapshot siga existiendo
-en el momento de la consulta.
-
-La llamada es solo lectura. Requiere autenticación, pero no rol administrador.
-
-Restaurar crea una versión creciente y conserva `saveIdentity`.
-
-## Ejemplos `curl`
-
-Los ejemplos usan la ruta canónica. Las variables se definen en la shell, pero
-el token nunca se incluye en la URL:
+## curl examples
 
 ```bash
 BASE=https://sync.example.com/api/games/palworld
-TOKEN='pws_TOKEN_DEL_EQUIPO'
+TOKEN='pws_MACHINE_TOKEN'
 AUTH="Authorization: Bearer ${TOKEN}"
-```
 
-Estado, lock y heartbeat:
-
-```bash
 curl --fail-with-body -H "$AUTH" -H 'Accept: application/json' \
   "$BASE/status"
 
 curl --fail-with-body -X POST -H "$AUTH" -H 'Content-Type: application/json' \
   --data '{"owner":"Host A","clientId":"host-a-pc"}' \
   "$BASE/lock"
+```
 
-SESSION='SESSION_DEVUELTA_POR_LOCK'
+After acquiring a lock:
+
+```bash
+SESSION='SESSION_RETURNED_BY_LOCK'
 curl --fail-with-body -X POST -H "$AUTH" -H 'Content-Type: application/json' \
   --data "{\"sessionId\":\"${SESSION}\"}" \
   "$BASE/heartbeat"
-```
 
-Descarga, publicación y liberación sin publicar:
-
-```bash
 curl --fail-with-body -H "$AUTH" --output save.zip --dump-header headers.txt \
   "$BASE/download"
 
@@ -338,64 +278,25 @@ curl --fail-with-body -X POST -H "$AUTH" \
   -F "sha256=${SHA256}" \
   -F 'worldGuid=A7E97BAA767DB9029EF013BB71E993A0' \
   "$BASE/upload"
-
-curl --fail-with-body -X POST -H "$AUTH" -H 'Content-Type: application/json' \
-  --data "{\"sessionId\":\"${SESSION}\"}" \
-  "$BASE/unlock"
 ```
 
-El adaptador de otro juego sustituye `worldGuid` por su `identityField`.
-Historial y operaciones administrativas:
+## Palworld compatibility aliases
 
-```bash
-curl --fail-with-body -H "$AUTH" "$BASE/history"
-curl --fail-with-body -H "$AUTH" --output historical.zip \
-  "$BASE/history/7/download"
-curl --fail-with-body -X POST -H "$AUTH" "$BASE/history/7/restore"
-curl --fail-with-body -X DELETE -H "$AUTH" "$BASE/history/7"
+The Palworld descriptor temporarily enables historical aliases under `/api/palworld/*`, `/palworld/api/*` and `/palworld`. New clients and deployments should use `/api/games/palworld` and `/games/palworld`.
 
-curl --fail-with-body -X POST -H "$AUTH" -H 'Content-Type: application/json' \
-  --data '{"reason":"El equipo anfitrión fue verificado como apagado"}' \
-  "$BASE/admin/force-unlock"
-
-curl --fail-with-body -H "$AUTH" "$BASE/admin/tokens"
-curl --fail-with-body -X POST -H "$AUTH" -H 'Content-Type: application/json' \
-  --data '{"username":"player","name":"host-b-pc"}' \
-  "$BASE/admin/tokens"
-curl --fail-with-body -X DELETE -H "$AUTH" "$BASE/admin/tokens/3"
-curl --fail-with-body -H "$AUTH" "$BASE/admin/audit?limit=100"
-```
-
-Crear un token devuelve su valor plano una única vez. Los endpoints de
-histórico, restauración, borrado, force-unlock, tokens y auditoría exigen rol
-`admin`; el resto admite `admin` o `player`.
-
-## Alias Palworld
-
-`config/games/palworld.json` activa temporalmente estas rutas antiguas:
+## HTTP status summary
 
 ```text
-/api/palworld/*
-/palworld/api/*
-/palworld
-```
-
-Los clientes y despliegues nuevos deben usar `/api/games/palworld` y
-`/games/palworld`. Otros adaptadores no exponen los alias.
-
-## Códigos HTTP
-
-```text
-200 operación correcta
-201 recurso o versión creada
-400 petición inválida
-401 autenticación ausente o token inválido
-403 permiso insuficiente o HTTPS requerido
-404 recurso inexistente
-409 lock, sesión, versión o identidad en conflicto
-413 upload demasiado grande
-422 hash o ZIP inválido
+200 success
+201 resource/version created
+400 invalid request
+401 missing/invalid authentication
+403 insufficient permission or HTTPS required
+404 resource not found
+409 lock/session/version/identity conflict
+413 upload too large
+422 hash or ZIP invalid
 429 rate limit
-500 error interno
-503 almacenamiento no disponible
+500 internal error
+503 storage unavailable
 ```

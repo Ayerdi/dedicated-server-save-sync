@@ -74,14 +74,14 @@ def test_reconcile_failure_after_commit_leaves_only_recoverable_orphan(
     original_reconcile = supervisor.reconcile_filesystem
 
     def fail_reconcile():
-        raise sqlite3.OperationalError("fallo físico inyectado")
+        raise sqlite3.OperationalError("injected physical failure")
 
     monkeypatch.setattr(supervisor, "reconcile_filesystem", fail_reconcile)
     assert supervisor.run_once() is True
 
-    # El COMMIT de resultado/retención ya ocurrió antes de intentar unlink: el
-    # fallo físico no puede restaurar una fila que apunte al ZIP que se iba a
-    # borrar. Queda únicamente un fichero huérfano, que es el estado seguro.
+    # The result/retention COMMIT already happened before attempting unlink:
+    # the physical failure cannot restore a row pointing to the ZIP that was going to be
+    # deleted. Only an orphan file remains, which is the safe state.
     with app.extensions["save_sync_connect"]() as db:
         versions = [
             row[0] for row in db.execute("SELECT version FROM versions ORDER BY version")

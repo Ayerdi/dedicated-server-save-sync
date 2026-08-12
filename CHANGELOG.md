@@ -1,143 +1,83 @@
-# Cambios
+# Changelog
 
-## Sin publicar
+All notable changes to this project are documented here.
 
-Sin cambios pendientes.
+## Unreleased
+
+No pending changes after v2.2.2.
+
+## 2.2.2
+
+- Makes English the canonical language for the repository, project website, contribution/support/security material, issue/PR templates and technical documentation.
+- Keeps a complete Spanish localization in the versioned GitHub Wiki source while making the Wiki Home and FAQ English-first.
+- Adds `Configure-Secrets.cmd`, `Test-Connection.cmd` and `Start-PalworldSync.cmd` as English aliases. Existing Spanish command filenames remain for backward compatibility.
+- Aligns the public navigation and project structure with `Ayerdi/PROX2-AutoSwitch` without changing Save Sync's Palworld-specific architecture.
+- Clarifies that the broader multi-game and future device/cloud-sync product belongs in a separate successor project.
+- Refreshes stale documentation pointers and removes the old duplicated Spanish/English repository-home split.
+- Does **not** change the synchronization API, save/ZIP format, SQLite schema, locking model, `worldGuid` handling or Palworld adapter protocol.
 
 ## 2.2.1
 
-- Endurece la publicación pública sin cambiar el protocolo del cliente ni el
-  formato de los saves.
-- La instalación de producción fija explícitamente backend y cliente a la misma
-  release estable en vez de desplegar la punta móvil de `main`.
-- Pages ya no puede desplegarse mientras el repositorio sea privado, ni siquiera
-  mediante `workflow_dispatch` manual.
-- Wiki y configuración post-publicación exigen checkout limpio, `main`,
-  `HEAD == origin/main` y CI verde para el SHA exacto.
-- Retira de `main` el workflow de una sola ejecución que publicó `v2.2.0` con
-  `contents: write`; futuras releases usan un script explícito con doble build
-  reproducible y preflight de CI.
-- Amplía el checker documental a enlaces Wiki y Pages, y endurece CI con
-  credenciales Git no persistentes, timeouts y ejecución única por PR/main.
-- Restaura el detalle histórico de las releases anteriores y documenta la
-  diferencia entre la release de producto y `clientVersion=1.2.0` del
-  adaptador Palworld.
-- Convierte `pending_backups` en una cola durable consumida por un sidecar
-  `backup-supervisor` independiente de Gunicorn. Publicar/restore y encolar el
-  backup forman un único commit SQLite.
-- Un reinicio del worker web ya no afecta al backup; una parada/crash del propio
-  supervisor conserva la fila para reintentar. La finalización (marker,
-  auditoría y retención) es transaccional y ofrece semántica at-least-once.
-- Los markers pendientes dejan de purgarse por edad: `stalePending` queda como
-  señal de observabilidad y la versión permanece protegida hasta un resultado
-  final conocido.
-- Restic 0.18.0 deja de instalarse desde APT: la imagen descarga los assets
-  oficiales `amd64`/`arm64` con versión y SHA-256 fijados y CI verifica el
-  binario resultante.
-- Añade E2E Docker que mata el contenedor web durante un backup y después mata
-  el propio supervisor durante otro intento, demostrando recuperación desde
-  SQLite y retención correcta al finalizar.
-- `config/deploy.sh` exige backend y supervisor healthy antes de publicar la
-  ruta Traefik; rollback detiene ambos sin borrar datos.
-- La retención de backend y supervisor confirma primero la metadata en SQLite y
-  solo después revalida referencias y elimina ZIPs físicos, evitando que un
-  rollback pueda dejar metadata apuntando a un fichero ya borrado.
-- El supervisor rechaza esquemas SQLite distintos de la versión soportada,
-  degrada healthcheck si hay cola pendiente sin comando configurado y termina
-  el process-group completo con escalado `SIGTERM` → `SIGKILL`.
-- Amplía CI con regresiones de crash-safety y un E2E que demuestra continuidad
-  del backup al caer web y reintento durable al caer el propio supervisor.
+- Hardened public release and production deployment without changing the client protocol or save format.
+- Required backend and client to come from the same stable product release.
+- Converted `pending_backups` into a durable SQLite queue consumed by a `backup-supervisor` independent from Gunicorn.
+- Made publication/restore and backup enqueue one SQLite commit.
+- Preserved queue rows across web/supervisor crashes with at-least-once retry semantics.
+- Changed retention to commit metadata before revalidating and deleting physical ZIPs.
+- Kept stale pending backup rows protected; `stalePending` became an observability signal rather than an expiry rule.
+- Pinned restic 0.18.0 by version and SHA-256 for amd64/arm64 and verified the resulting image in CI.
+- Added Docker E2E coverage for web-worker and backup-supervisor crash/restart recovery.
+- Required both backend and supervisor to become healthy before `config/deploy.sh` publishes the Traefik route.
+- Expanded CI and publication preflights and documented the distinction between product release and `clientVersion=1.2.0`.
 
 ## 2.2.0
 
-- Añade `GET /backup-status` y una tarjeta de estado operativo en el panel.
-- Separa el resultado histórico de la versión actual de la configuración
-  `enabled` del backup automático.
-- Los marcadores `pending_backups` vencidos dejan de mostrarse como pendientes
-  eternos y pasan a estado conservador `unknown`.
-- `lastCompleted` deja de depender de una ventana fija de 500 eventos.
-- Un fallo de `/backup-status` no impide cargar el resto del panel.
-- Documenta que `latestVersionBackedUp=true` representa el éxito auditado del
-  hook, no una comprobación en vivo del repositorio restic.
-- Prepara publicación pública: README ES/EN, web GitHub Pages bilingüe, fuente
-  versionada para la wiki y empaquetado reproducible del cliente.
-- La release `v2.2.0` se generó desde CI construyendo dos veces el ZIP y
-  comprobando su SHA-256 antes de publicarlo.
-- El repositorio entra en mantenimiento como implementación estable de
-  referencia para Palworld. Las evoluciones multi-juego de gran alcance se
-  desarrollarán fuera de este repositorio.
+- Added `GET /backup-status` and an operational backup card in the panel.
+- Separated the historical result for the current version from whether automatic backup is enabled now.
+- Reported stale backup markers conservatively rather than as permanently active work.
+- Removed the fixed 500-event window when finding the latest completed backup.
+- Made `/backup-status` failures degrade safely without breaking the rest of the panel.
+- Documented that `latestVersionBackedUp=true` is an audited hook result, not a live restic verification.
+- Prepared the initial public README ES/EN, GitHub Pages, versioned Wiki source and deterministic v2.2.0 client package.
+- Entered maintenance mode as the stable Palworld reference implementation.
 
 ## 2.1.1
 
-- Actualiza dependencias: gunicorn 26, pytest 9.1.1 y ruff 0.16 (con hashes),
-  y las acciones de CI (checkout v7, setup-python v7).
-- `SAVE_SYNC_POST_PUBLISH_COMMAND` captura cualquier fallo (incluidas
-  `ValueError` de `shlex.split`, `OSError`/`FileNotFoundError` al lanzar el
-  proceso y la imposibilidad de crear el thread supervisor) de modo que una
-  publicación confirmada siempre devuelve 201.
-- El marcador `pending_backups` se inserta **atómicamente dentro de la
-  transacción de publicación/restore**, cerrando la carrera entre la
-  publicación de la versión y su protección frente a la retención.
-- La tabla `pending_backups` protege de la retención los ZIP con backup en
-  curso; la limpieza del bootstrap usa `started_at` en lugar de borrar todo,
-  preservando pendientes de workers colegas vivos.
-- El endpoint `DELETE /history/<version>` rechaza (409 `backup_in_progress`)
-  borrar versiones con backup en curso; sólo se permite tras liberarse el
-  marcador.
-- El proceso externo se cancela tras `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`;
-  se registra en auditoría `backup_hook_completed`/`backup_hook_failed` con
-  `exitCode` y `timedOut`. El grupo de proceso completo (incluidos nietos) se
-  termina en caso de timeout.
-- La imagen incluye `restic`; el caché se dirige a un volumen escribible y se
-  exige excluirlo del backup (`--exclude`). Se valida
-  `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS >= 1`.
-- La purga de `pending_backups` obsoletos pasa dentro de
-  `cleanup_canonical_versions`, de modo que un worker caído no deja versiones
-  protegidas para siempre; el supervisor de backup usa `try/finally` para
-  liberar el marcador, auditar y reaplicar la retención incluso en fallos.
-- `SCHEMA_VERSION` pasa a 3 al introducir la tabla `pending_backups`.
-- La documentación aclara que el backup externo protege al ZIP publicado
-  inmutable, pero un `restic backup` sobre el volumen no es un snapshot
-  transaccional de SQLite.
+- Updated dependencies and CI actions.
+- Hardened external backup launch/error handling so a confirmed publication still returns success even when the optional hook cannot start.
+- Inserted backup protection atomically during publish/restore.
+- Protected in-progress backup versions from history deletion and retention.
+- Added hook timeout and process-group termination.
+- Introduced schema version 3 with `pending_backups`.
+- Documented external backup consistency limits for live SQLite WAL storage.
 
 ## 2.1.0
 
-- Añade `SAVE_SYNC_RETENTION_PER_SLOT` para conservar N versiones por slot.
-- Añade `SAVE_SYNC_POST_PUBLISH_COMMAND` para lanzar un backup externo tras
-  cada publicación confirmada.
+- Added `SAVE_SYNC_RETENTION_PER_SLOT`.
+- Added `SAVE_SYNC_POST_PUBLISH_COMMAND` for post-publication external backups.
 
 ## 2.0.0
 
-- Adopta Apache License 2.0 para código y documentación.
-- Actualiza Flask a 3.1.3 por la corrección de seguridad de la rama 3.1.
-- Bloquea dependencias transitivas con hashes y añade `pip-audit` y cobertura.
-- Añade E2E Docker aislado, modo API-only y `certResolver` parametrizable.
-- Registra `PRAGMA user_version=2` y rechaza downgrades implícitos.
-- Añade preparación comunitaria, release reproducible y checklist público.
-- Convierte el backend en motor de una instancia por `gameKey`.
-- Añade rutas canónicas `/api/games/{gameKey}` y cabeceras `X-Save-Sync-*`.
-- Generaliza `world_guid` como `save_identity` configurable por adaptador.
-- Mantiene alias HTTP y campos Palworld para compatibilidad.
-- Separa `SyncGame.ps1` de `client/adapters/palworld`.
-- Aísla contenedor, almacenamiento, base y configuración Traefik por juego.
-- Añade pruebas con un segundo contrato ficticio basado en `campaignId`.
+- Adopted Apache License 2.0.
+- Updated Flask and pinned transitive dependencies with hashes, `pip-audit` and coverage enforcement.
+- Added isolated Docker E2E, API-only mode and configurable Traefik certificate resolver.
+- Added explicit SQLite schema versioning and downgrade rejection.
+- Generalized the backend around one `gameKey` per deployment and canonical `/api/games/{gameKey}` routes.
+- Generalized Palworld `world_guid` into adapter-defined `save_identity` while keeping compatibility aliases.
+- Split the Windows launcher from `client/adapters/palworld` and isolated deployment storage/database by game.
 
 ## 1.2.0
 
-- Unifica los clientes Windows en una única base configurable.
-- Incorpora la selección preferente del GUID remoto de la corrección 1.1.
-- Añade versión de cliente al manifest ZIP.
-- Añade modo `LibraryOnly` y pruebas Pester aisladas.
-- Parametriza dominio, red, ForwardAuth, almacenamiento e identidades.
-- Sustituye datos del despliegue original por ejemplos neutros.
-- Añade documentación para despliegue, operación y otros juegos.
+- Unified Windows clients into one configurable codebase.
+- Added preferred selection of the authoritative remote world GUID.
+- Added client version to the ZIP manifest and `LibraryOnly` testing mode.
+- Parameterized domain, network, ForwardAuth, storage and identities.
+- Replaced original deployment-specific data with neutral examples.
 
 ## 1.1.0
 
-- Corrige la ambigüedad cuando el equipo contiene varios mundos locales y la
-autoridad remota ya identifica cuál debe usarse.
+- Fixed local multi-world ambiguity when the remote authority already identifies the correct world.
 
 ## 1.0.0
 
-- Primera implementación operativa de backend, lock, versiones, `worldGuid`,
-  cliente PowerShell y publicación atómica.
+- Initial operational implementation of backend, lock, versioning, `worldGuid`, Windows client and atomic publication.

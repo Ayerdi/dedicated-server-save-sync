@@ -46,7 +46,7 @@ function Write-Success {
 
 function Write-WarningText {
     param([string]$Message)
-    Write-Host "[AVISO] $Message" -ForegroundColor Yellow
+    Write-Host "[WARN] $Message" -ForegroundColor Yellow
 }
 
 function Write-ErrorText {
@@ -72,7 +72,7 @@ function Write-Log {
         Add-Content -LiteralPath $LogPath -Value $line -Encoding UTF8
     }
     catch {
-        # El log nunca debe romper el flujo principal.
+        # Logging must never break the main flow.
     }
 }
 
@@ -119,30 +119,30 @@ function Protect-SecretsFile {
         & icacls.exe $Path /inheritance:r /grant:r "${identity}:F" | Out-Null
     }
     catch {
-        Write-Log -Level 'warning' -Message "No se pudo restringir la ACL de secrets.json: $($_.Exception.Message)"
+        Write-Log -Level 'warning' -Message "Could not restrict the ACL on secrets.json: $($_.Exception.Message)"
     }
 }
 
 function Initialize-Secrets {
     Write-Host ''
-    Write-Info 'Configuración segura de credenciales'
-    Write-Host 'El token y la contraseña REST se cifrarán con DPAPI para este usuario de Windows.'
+    Write-Info 'Secure credential setup'
+    Write-Host 'The API token and REST password will be encrypted with DPAPI for this Windows user.'
 
     do {
-        $tokenSecure = Read-Host 'Token de Palworld Sync (pws_...)' -AsSecureString
+        $tokenSecure = Read-Host 'Palworld Sync token (pws_...)' -AsSecureString
         $tokenPlain = Convert-SecureStringToPlainText -SecureString $tokenSecure
         $tokenValid = $tokenPlain -match '^pws_[A-Za-z0-9_-]{48}$'
         if (-not $tokenValid) {
-            Write-WarningText 'El token no tiene el formato esperado: pws_ seguido de 48 caracteres.'
+            Write-WarningText 'The token does not have the expected format: pws_ followed by 48 characters.'
         }
     } while (-not $tokenValid)
 
     do {
-        $restPasswordSecure = Read-Host 'AdminPassword de la REST API local de Palworld' -AsSecureString
+        $restPasswordSecure = Read-Host 'AdminPassword for the local Palworld REST API' -AsSecureString
         $restPasswordPlain = Convert-SecureStringToPlainText -SecureString $restPasswordSecure
         $passwordValid = -not [string]::IsNullOrWhiteSpace($restPasswordPlain)
         if (-not $passwordValid) {
-            Write-WarningText 'La contraseña REST no puede estar vacía.'
+            Write-WarningText 'The REST password cannot be empty.'
         }
     } while (-not $passwordValid)
 
@@ -158,7 +158,7 @@ function Initialize-Secrets {
 
     $tokenPlain = $null
     $restPasswordPlain = $null
-    Write-Success 'Credenciales cifradas guardadas en data\secrets.json.'
+    Write-Success 'Encrypted credentials saved to data\secrets.json.'
 }
 
 function Get-Secrets {
@@ -168,7 +168,7 @@ function Get-Secrets {
 
     $stored = Read-JsonFile -Path $SecretsPath
     if ($null -eq $stored -or [string]::IsNullOrWhiteSpace([string]$stored.apiToken) -or [string]::IsNullOrWhiteSpace([string]$stored.restPassword)) {
-        throw 'El archivo de secretos está vacío o dañado. Ejecuta Configurar-secretos.cmd.'
+        throw 'The secrets file is empty or damaged. Run Configure-Secrets.cmd.'
     }
 
     try {
@@ -176,16 +176,16 @@ function Get-Secrets {
         $restSecure = ConvertTo-SecureString ([string]$stored.restPassword)
     }
     catch {
-        throw 'No se pudieron descifrar las credenciales. Deben abrirse con el mismo usuario de Windows y en el mismo equipo. Ejecuta Configurar-secretos.cmd.'
+        throw 'The credentials could not be decrypted. They must be opened by the same Windows user on the same machine. Run Configure-Secrets.cmd.'
     }
 
     $token = Convert-SecureStringToPlainText -SecureString $tokenSecure
     $restPassword = Convert-SecureStringToPlainText -SecureString $restSecure
     if ($token -notmatch '^pws_[A-Za-z0-9_-]{48}$') {
-        throw 'El token descifrado no tiene el formato esperado. Ejecuta Configurar-secretos.cmd.'
+        throw 'The decrypted token does not have the expected format. Run Configure-Secrets.cmd.'
     }
     if ([string]::IsNullOrWhiteSpace($restPassword)) {
-        throw 'La contraseña REST descifrada está vacía. Ejecuta Configurar-secretos.cmd.'
+        throw 'The decrypted REST password is empty. Run Configure-Secrets.cmd.'
     }
 
     return [pscustomobject]@{
@@ -201,18 +201,18 @@ function Get-RequiredProperty {
     )
     $property = $Object.PSObject.Properties[$Name]
     if ($null -eq $property -or $null -eq $property.Value -or [string]::IsNullOrWhiteSpace([string]$property.Value)) {
-        throw "Falta el valor obligatorio '$Name' en config.json."
+        throw "Required value '$Name' is missing from config.json."
     }
     return $property.Value
 }
 
 function Load-AndValidateConfig {
     if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
-        throw "No existe config.json en $ScriptRoot."
+        throw "config.json does not exist in $ScriptRoot."
     }
     $config = Read-JsonFile -Path $ConfigPath
     if ($null -eq $config) {
-        throw 'config.json está vacío o no es JSON válido.'
+        throw 'config.json is empty or is not valid JSON.'
     }
 
     foreach ($name in @('PlayerName','ClientId','ApiBaseUrl','PalServerRoot','PalServerExecutable','SaveGamesRoot','GameUserSettingsPath','RestApiBaseUrl','RestUsername')) {
@@ -220,16 +220,16 @@ function Load-AndValidateConfig {
     }
 
     if ([string]$config.ApiBaseUrl -notmatch '^https://') {
-        throw 'ApiBaseUrl debe usar HTTPS.'
+        throw 'ApiBaseUrl must use HTTPS.'
     }
     if ([string]$config.RestApiBaseUrl -notmatch '^http://(127\.0\.0\.1|localhost)(:\d+)?/') {
-        throw 'RestApiBaseUrl debe apuntar a localhost o 127.0.0.1.'
+        throw 'RestApiBaseUrl must point to localhost or 127.0.0.1.'
     }
     if (-not (Test-Path -LiteralPath ([string]$config.PalServerExecutable) -PathType Leaf)) {
-        throw "No se encuentra PalServer.exe: $($config.PalServerExecutable)"
+        throw "PalServer.exe was not found: $($config.PalServerExecutable)"
     }
     if (-not (Test-Path -LiteralPath ([string]$config.SaveGamesRoot) -PathType Container)) {
-        throw "No se encuentra SaveGamesRoot: $($config.SaveGamesRoot)"
+        throw "SaveGamesRoot was not found: $($config.SaveGamesRoot)"
     }
 
     return $config
@@ -292,7 +292,7 @@ function Invoke-ApiJson {
         $statusCode = 0
         try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
         $responseBody = Get-WebExceptionBody -Exception $_.Exception
-        $message = "La API web rechazó $Method $Path (HTTP $statusCode)."
+        $message = "The web API rejected $Method $Path (HTTP $statusCode)."
         if (-not [string]::IsNullOrWhiteSpace($responseBody)) {
             try {
                 $parsed = $responseBody | ConvertFrom-Json
@@ -345,7 +345,7 @@ function Invoke-PalRest {
         $statusCode = 0
         try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
         $responseBody = Get-WebExceptionBody -Exception $_.Exception
-        throw (New-HttpFailure -Message "La REST API local de Palworld rechazó $Method $Path (HTTP $statusCode)." -StatusCode $statusCode -ResponseBody $responseBody)
+        throw (New-HttpFailure -Message "The local Palworld REST API rejected $Method $Path (HTTP $statusCode)." -StatusCode $statusCode -ResponseBody $responseBody)
     }
 }
 
@@ -393,15 +393,15 @@ function Download-LatestSave {
         $bodyOnError = $null
         if (-not $response.IsSuccessStatusCode) {
             $bodyOnError = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-            throw (New-HttpFailure -Message "Falló la descarga del save (HTTP $([int]$response.StatusCode)). $bodyOnError" -StatusCode ([int]$response.StatusCode) -ResponseBody $bodyOnError)
+            throw (New-HttpFailure -Message "Save download failed (HTTP $([int]$response.StatusCode)). $bodyOnError" -StatusCode ([int]$response.StatusCode) -ResponseBody $bodyOnError)
         }
 
         $versionHeader = Get-HeaderValue -Response $response -Name 'X-Palworld-Version'
         $shaHeader = Get-HeaderValue -Response $response -Name 'X-Palworld-SHA256'
         $guidHeader = Get-HeaderValue -Response $response -Name 'X-Palworld-World-Guid'
-        if ($versionHeader -notmatch '^\d+$') { throw 'La descarga no incluye X-Palworld-Version válido.' }
-        if ($shaHeader -notmatch '^[A-Fa-f0-9]{64}$') { throw 'La descarga no incluye X-Palworld-SHA256 válido.' }
-        if ($guidHeader -notmatch '^[A-Fa-f0-9]{32}$') { throw 'La descarga no incluye X-Palworld-World-Guid válido.' }
+        if ($versionHeader -notmatch '^\d+$') { throw 'The download does not include a valid X-Palworld-Version.' }
+        if ($shaHeader -notmatch '^[A-Fa-f0-9]{64}$') { throw 'The download does not include a valid X-Palworld-SHA256.' }
+        if ($guidHeader -notmatch '^[A-Fa-f0-9]{32}$') { throw 'The download does not include a valid X-Palworld-World-Guid.' }
 
         $inputStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
         $outputStream = [IO.FileStream]::new($partial, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
@@ -412,7 +412,7 @@ function Download-LatestSave {
 
         $actualSha = Get-Sha256 -Path $partial
         if ($actualSha -ne $shaHeader.ToLowerInvariant()) {
-            throw "SHA-256 de descarga incorrecto. Esperado $shaHeader; obtenido $actualSha."
+            throw "Download SHA-256 mismatch. Expected $shaHeader; got $actualSha."
         }
         Move-Item -LiteralPath $partial -Destination $Destination -Force
 
@@ -476,7 +476,7 @@ function Upload-SaveArchive {
         $response = $client.PostAsync($uri, $multipart).GetAwaiter().GetResult()
         $text = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
         if (-not $response.IsSuccessStatusCode) {
-            $message = "Falló la subida (HTTP $([int]$response.StatusCode))."
+            $message = "Upload failed (HTTP $([int]$response.StatusCode))."
             if (-not [string]::IsNullOrWhiteSpace($text)) {
                 try {
                     $parsedError = $text | ConvertFrom-Json
@@ -506,7 +506,7 @@ function Test-ValidWorldGuid {
 function Normalize-WorldGuid {
     param([string]$WorldGuid)
     if (-not (Test-ValidWorldGuid -WorldGuid $WorldGuid)) {
-        throw "World GUID no válido: '$WorldGuid'."
+        throw "Invalid World GUID: '$WorldGuid'."
     }
     return $WorldGuid.Trim().ToUpperInvariant()
 }
@@ -563,9 +563,9 @@ function Find-LocalWorldGuid {
     param([string]$PreferredGuid)
     $candidates = [Collections.Generic.List[string]]::new()
 
-    # Cuando el backend o config indican un GUID preferido y su carpeta existe,
-    # ese mundo es autoritativo. No se debe fallar solo porque queden mundos de
-    # prueba u otras copias locales dentro de SaveGames\0.
+    # When the backend or config provides a preferred GUID and its folder exists,
+    # that world is authoritative. Do not fail only because other worlds remain from
+    # test worlds or other local copies inside SaveGames\0.
     if (Test-ValidWorldGuid -WorldGuid $PreferredGuid) {
         $candidate = Normalize-WorldGuid -WorldGuid $PreferredGuid
         if (Test-Path -LiteralPath (Get-WorldFolderPath -WorldGuid $candidate) -PathType Container) {
@@ -602,7 +602,7 @@ function Find-LocalWorldGuid {
     if ($candidates.Count -eq 0) { return $null }
     if ($candidates.Count -eq 1) { return $candidates[0] }
 
-    throw "Hay varios mundos locales posibles ($($candidates -join ', ')). Especifica InitialWorldGuid en config.json."
+    throw "Several local worlds are possible ($($candidates -join ', ')). Set InitialWorldGuid in config.json."
 }
 
 function Test-SafeZipEntryName {
@@ -621,7 +621,7 @@ function Read-ArchiveManifest {
     $archive = [IO.Compression.ZipFile]::OpenRead($ZipPath)
     try {
         $manifestEntry = $archive.GetEntry('manifest.json')
-        if ($null -eq $manifestEntry) { throw 'El ZIP no contiene manifest.json.' }
+        if ($null -eq $manifestEntry) { throw 'The ZIP does not contain manifest.json.' }
         $reader = [IO.StreamReader]::new($manifestEntry.Open(), [Text.Encoding]::UTF8, $true)
         try { $manifestRaw = $reader.ReadToEnd() } finally { $reader.Dispose() }
         $manifest = $manifestRaw | ConvertFrom-Json
@@ -631,17 +631,17 @@ function Read-ArchiveManifest {
 
         foreach ($entry in $archive.Entries) {
             if (-not (Test-SafeZipEntryName -Name $entry.FullName)) {
-                throw "Entrada ZIP insegura: $($entry.FullName)"
+                throw "Unsafe ZIP entry: $($entry.FullName)"
             }
             if ($entry.FullName -eq 'manifest.json') { continue }
             if (-not $entry.FullName.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
-                throw "El ZIP contiene una entrada fuera del mundo esperado: $($entry.FullName)"
+                throw "The ZIP contains an entry outside the expected world: $($entry.FullName)"
             }
             if ($entry.FullName.Equals("${prefix}Level.sav", [StringComparison]::OrdinalIgnoreCase)) {
                 $hasLevel = $true
             }
         }
-        if (-not $hasLevel) { throw 'El ZIP no contiene Level.sav.' }
+        if (-not $hasLevel) { throw 'The ZIP does not contain Level.sav.' }
         return $manifest
     }
     finally {
@@ -660,10 +660,10 @@ function New-WorldArchive {
     $WorldGuid = Normalize-WorldGuid -WorldGuid $WorldGuid
     $worldPath = Get-WorldFolderPath -WorldGuid $WorldGuid
     if (-not (Test-Path -LiteralPath $worldPath -PathType Container)) {
-        throw "No existe la carpeta del mundo: $worldPath"
+        throw "The world folder does not exist: $worldPath"
     }
     if (-not (Test-Path -LiteralPath (Join-Path $worldPath 'Level.sav') -PathType Leaf)) {
-        throw "El mundo no contiene Level.sav: $worldPath"
+        throw "The world does not contain Level.sav: $worldPath"
     }
 
     $parent = Split-Path -Parent $Destination
@@ -764,7 +764,7 @@ function Expand-WorldArchive {
             if ([string]::IsNullOrWhiteSpace($relative)) { continue }
             $destination = [IO.Path]::GetFullPath((Join-Path $DestinationWorldPath $relative))
             if (-not $destination.StartsWith($destinationRoot, [StringComparison]::OrdinalIgnoreCase)) {
-                throw "Ruta de extracción insegura: $($entry.FullName)"
+                throw "Unsafe extraction path: $($entry.FullName)"
             }
             if ($entry.FullName.EndsWith('/')) {
                 Ensure-Directory -Path $destination
@@ -780,7 +780,7 @@ function Expand-WorldArchive {
         $archive.Dispose()
     }
     if (-not (Test-Path -LiteralPath (Join-Path $DestinationWorldPath 'Level.sav') -PathType Leaf)) {
-        throw 'La extracción no produjo Level.sav.'
+        throw 'Extraction did not produce Level.sav.'
     }
 }
 
@@ -893,8 +893,8 @@ function Wait-ForPalRestInfo {
     $lastError = $null
     while ((Get-Date) -lt $deadline) {
         $Process.Refresh()
-        if ($Process.HasExited) { throw 'PalServer.exe se cerró antes de que la REST API estuviera disponible.' }
-        if ((Get-HeartbeatStatus -Job $HeartbeatJob) -eq 'fatal') { throw 'Se perdió el lock web durante el arranque.' }
+        if ($Process.HasExited) { throw 'PalServer.exe exited before the REST API became available.' }
+        if ((Get-HeartbeatStatus -Job $HeartbeatJob) -eq 'fatal') { throw 'The web lock was lost during startup.' }
         try {
             $info = Invoke-PalRest -Method GET -Path 'info' -Password $RestPassword
             if (Test-ValidWorldGuid -WorldGuid ([string]$info.worldguid)) { return $info }
@@ -902,7 +902,7 @@ function Wait-ForPalRestInfo {
         catch { $lastError = $_.Exception.Message }
         Start-Sleep -Seconds 3
     }
-    throw "La REST API de Palworld no respondió a tiempo. Último error: $lastError"
+    throw "The Palworld REST API did not respond in time. Last error: $lastError"
 }
 
 function Wait-ForSessionEndRequest {
@@ -911,8 +911,8 @@ function Wait-ForSessionEndRequest {
         [System.Management.Automation.Job]$HeartbeatJob
     )
     Write-Host ''
-    Write-Host 'Servidor activo. Pulsa ENTER en esta ventana para guardar, cerrar y sincronizar.' -ForegroundColor Green
-    Write-Host 'No cierres esta ventana de PowerShell mientras el servidor esté funcionando.'
+    Write-Host 'Server active. Press ENTER in this window to save, stop and synchronize.' -ForegroundColor Green
+    Write-Host 'Do not close this PowerShell window while the server is running.'
 
     while ($true) {
         $Process.Refresh()
@@ -947,17 +947,17 @@ function Stop-PalServerGracefully {
     $infoBeforeStop = Invoke-PalRest -Method GET -Path 'info' -Password $RestPassword
     $guidBeforeStop = Normalize-WorldGuid -WorldGuid ([string]$infoBeforeStop.worldguid)
     if ($guidBeforeStop -ne $ExpectedWorldGuid) {
-        throw "El servidor cambió de mundo antes del cierre: $guidBeforeStop, esperado $ExpectedWorldGuid."
+        throw "The server changed worlds before shutdown: $guidBeforeStop, expected $ExpectedWorldGuid."
     }
 
-    Write-Info 'Ordenando a Palworld guardar el mundo...'
+    Write-Info 'Requesting Palworld to save the world...'
     [void](Invoke-PalRest -Method POST -Path 'save' -Password $RestPassword)
     Start-Sleep -Seconds ([int]$script:Config.SaveGraceSeconds)
 
-    Write-Info 'Solicitando apagado limpio de PalServer...'
+    Write-Info 'Requesting a clean PalServer shutdown...'
     $shutdownBody = @{
         waittime = [int]$script:Config.ShutdownWaitSeconds
-        message = 'El servidor se cerrará para sincronizar la partida.'
+        message = 'The server will shut down to synchronize the save.'
     }
     [void](Invoke-PalRest -Method POST -Path 'shutdown' -Password $RestPassword -Body $shutdownBody)
 
@@ -966,11 +966,11 @@ function Stop-PalServerGracefully {
         Start-Sleep -Seconds 1
         $Process.Refresh()
         if ($Process.HasExited) {
-            Write-Success 'PalServer se cerró correctamente.'
+            Write-Success 'PalServer shut down cleanly.'
             return
         }
     }
-    throw 'PalServer no se cerró dentro del tiempo límite. No se forzará el proceso ni se comprimirá el save mientras siga abierto.'
+    throw 'PalServer did not stop within the timeout. The process will not be forced and the save will not be archived while it is still running.'
 }
 
 function Stop-PalServerBestEffort {
@@ -982,12 +982,12 @@ function Stop-PalServerBestEffort {
     if ($Process.HasExited) { return }
 
     try {
-        Write-WarningText 'Intentando guardar y cerrar PalServer sin validación de GUID...'
+        Write-WarningText 'Attempting to save and stop PalServer without GUID validation...'
         [void](Invoke-PalRest -Method POST -Path 'save' -Password $RestPassword)
         Start-Sleep -Seconds ([int]$script:Config.SaveGraceSeconds)
         [void](Invoke-PalRest -Method POST -Path 'shutdown' -Password $RestPassword -Body @{
             waittime = [int]$script:Config.ShutdownWaitSeconds
-            message = 'El servidor se cerrará por un error del sincronizador.'
+            message = 'The server will shut down because of a synchronization error.'
         })
         $deadline = (Get-Date).AddSeconds([int]$script:Config.ShutdownTimeoutSeconds)
         while ((Get-Date) -lt $deadline) {
@@ -995,10 +995,10 @@ function Stop-PalServerBestEffort {
             $Process.Refresh()
             if ($Process.HasExited) { return }
         }
-        throw 'PalServer no se cerró dentro del tiempo límite.'
+        throw 'PalServer did not stop within the timeout.'
     }
     catch {
-        throw "No se pudo realizar el cierre REST de emergencia: $($_.Exception.Message)"
+        throw "Could not perform the emergency REST shutdown: $($_.Exception.Message)"
     }
 }
 
@@ -1061,7 +1061,7 @@ function Reconcile-Upload {
         )
     }
     catch {
-        Write-Log -Level 'warning' -Message "No se pudo reconciliar la subida: $($_.Exception.Message)"
+        Write-Log -Level 'warning' -Message "Could not reconcile the upload: $($_.Exception.Message)"
         return $false
     }
 }
@@ -1077,7 +1077,7 @@ function Unlock-Session {
         return $true
     }
     catch {
-        Write-WarningText "No se pudo liberar el lock: $($_.Exception.Message)"
+        Write-WarningText "Could not release the lock: $($_.Exception.Message)"
         return $false
     }
 }
@@ -1088,23 +1088,23 @@ function Test-Environment {
     )
     Write-Info 'Probando API web...'
     $status = Invoke-ApiJson -Method GET -Path 'status' -Token $Secrets.ApiToken
-    Write-Success ("API web accesible. Versión remota: {0}; inicializada: {1}; worldGuid: {2}" -f $status.version, $status.initialized, $status.worldGuid)
+    Write-Success ("Web API reachable. Remote version: {0}; initialized: {1}; worldGuid: {2}" -f $status.version, $status.initialized, $status.worldGuid)
 
     $running = Get-Process -Name 'PalServer' -ErrorAction SilentlyContinue
     if ($null -ne $running) {
-        Write-Info 'PalServer está ejecutándose; probando REST local...'
+        Write-Info 'PalServer is running; testing local REST...'
         $info = Invoke-PalRest -Method GET -Path 'info' -Password $Secrets.RestPassword
-        Write-Success ("REST local accesible. Versión: {0}; worldGuid: {1}" -f $info.version, $info.worldguid)
+        Write-Success ("Local REST reachable. Version: {0}; worldGuid: {1}" -f $info.version, $info.worldguid)
     }
     else {
-        Write-WarningText 'PalServer no está ejecutándose; la REST local no se ha probado.'
+        Write-WarningText 'PalServer is not running; the local REST API was not tested.'
     }
 }
 
-# ------------------------------ Inicio principal ------------------------------
+# ------------------------------ Main entrypoint ------------------------------
 
-# Permite cargar las funciones desde Pester sin crear directorios, pedir
-# secretos ni iniciar el servidor. No forma parte del flujo de uso normal.
+# Allows Pester to load functions without creating directories, requesting
+# secrets or starting the server. This is not part of the normal user flow.
 if ($LibraryOnly) { return }
 
 foreach ($directory in @($DataRoot,$BackupRoot,$DownloadRoot,$PendingUploadRoot,$TempRoot,$LogRoot)) {
@@ -1127,10 +1127,10 @@ $finalArchive = $null
 try {
     Write-Info "Palworld Sync Client $ClientVersion"
     if ($PSVersionTable.PSVersion.Major -lt 5) {
-        throw 'Se necesita Windows PowerShell 5.1 o posterior.'
+        throw 'Windows PowerShell 5.1 or later is required.'
     }
     if ($env:OS -ne 'Windows_NT') {
-        throw 'Este cliente está diseñado para Windows.'
+        throw 'This client is designed for Windows.'
     }
 
     $script:Config = Load-AndValidateConfig
@@ -1138,7 +1138,7 @@ try {
     if ($SetupSecrets) {
         Initialize-Secrets
         Write-Host ''
-        Write-Success 'Configuración terminada.'
+        Write-Success 'Configuration complete.'
         return
     }
 
@@ -1151,21 +1151,21 @@ try {
 
     $alreadyRunning = Get-Process -Name 'PalServer' -ErrorAction SilentlyContinue
     if ($null -ne $alreadyRunning) {
-        throw 'PalServer.exe ya está abierto. Ciérralo antes de ejecutar este lanzador.'
+        throw 'PalServer.exe is already running. Close it before running this launcher.'
     }
 
-    Write-Info 'Consultando el estado remoto...'
+    Write-Info 'Checking remote status...'
     $status = Invoke-ApiJson -Method GET -Path 'status' -Token $secrets.ApiToken
-    Write-Info ("Remoto: versión {0}; inicializado={1}; lock={2}; worldGuid={3}" -f $status.version, $status.initialized, $status.locked, $status.worldGuid)
+    Write-Info ("Remote: version {0}; initialized={1}; lock={2}; worldGuid={3}" -f $status.version, $status.initialized, $status.locked, $status.worldGuid)
 
     $existingPending = Read-JsonFile -Path $PendingPath
     if ($null -ne $existingPending) {
-        Write-WarningText 'Se ha encontrado una sesión local pendiente de una ejecución anterior.'
+        Write-WarningText 'A pending local session from a previous run was found.'
         if ([int]$status.version -ne [int]$existingPending.baseVersion) {
-            throw "La versión remota avanzó desde la sesión pendiente (local base $($existingPending.baseVersion), remoto $($status.version)). No se sobrescribirá nada. Revisa data\pending-uploads y los backups locales."
+            throw "The remote version advanced since the pending session (local base $($existingPending.baseVersion), remote $($status.version)). Nothing will be overwritten. Review data\pending-uploads and local backups."
         }
         if ([bool]$status.initialized -and (Normalize-WorldGuid -WorldGuid ([string]$status.worldGuid)) -ne (Normalize-WorldGuid -WorldGuid ([string]$existingPending.worldGuid))) {
-            throw 'La sesión pendiente pertenece a un worldGuid diferente del remoto. Se requiere intervención manual.'
+            throw 'The pending session belongs to a different worldGuid than the remote authority. Manual intervention is required.'
         }
     }
 
@@ -1177,7 +1177,7 @@ try {
     $sessionId = [string]$lock.sessionId
     $baseVersion = [int]$lock.baseVersion
     $lockHeld = $true
-    Write-Success ("Lock adquirido sobre la versión $baseVersion.")
+    Write-Success ("Lock acquired on version $baseVersion.")
 
     $heartbeatJob = Start-HeartbeatJob -ApiBaseUrl ([string]$script:Config.ApiBaseUrl) -Token $secrets.ApiToken -SessionId $sessionId -IntervalSeconds ([int]$script:Config.HeartbeatSeconds) -StateFile $HeartbeatStatePath
 
@@ -1187,18 +1187,18 @@ try {
     if ($null -ne $existingPending) {
         $localGuid = Normalize-WorldGuid -WorldGuid ([string]$existingPending.worldGuid)
         if (-not (Test-Path -LiteralPath (Get-WorldFolderPath -WorldGuid $localGuid) -PathType Container)) {
-            throw "La sesión pendiente indica $localGuid, pero no existe su carpeta local."
+            throw "The pending session references $localGuid, but its local folder does not exist."
         }
-        Write-Info 'Se conservará la copia local pendiente; no se descargará el remoto.'
+        Write-Info 'The pending local copy will be preserved; the remote save will not be downloaded.'
     }
     elseif ($baseVersion -eq 0) {
         $preferred = $null
         if ($null -ne $script:Config.PSObject.Properties['InitialWorldGuid']) { $preferred = [string]$script:Config.InitialWorldGuid }
         $localGuid = Find-LocalWorldGuid -PreferredGuid $preferred
         if (-not (Test-ValidWorldGuid -WorldGuid $localGuid)) {
-            throw 'La web aún está vacía y no se encontró un mundo local válido para inicializarla.'
+            throw 'The remote service is still empty and no valid local world was found to initialize it.'
         }
-        Write-Info "Inicialización: se usará el mundo local $localGuid."
+        Write-Info "Initialization: using local world $localGuid."
     }
     else {
         $remoteGuid = Normalize-WorldGuid -WorldGuid ([string]$lock.worldGuid)
@@ -1220,26 +1220,26 @@ try {
                 [void](Backup-LocalWorld -WorldGuid $currentLocalGuid -Reason 'before-download' -BaseVersion $baseVersion)
             }
 
-            Write-Info "Descargando la versión remota $baseVersion..."
+            Write-Info "Downloading remote version $baseVersion..."
             $downloadPath = Join-Path $DownloadRoot ("remote-v{0:D6}.zip" -f $baseVersion)
             $download = Download-LatestSave -Token $secrets.ApiToken -Destination $downloadPath
-            if ($download.Version -ne $baseVersion) { throw "La descarga devolvió versión $($download.Version), pero el lock fijó $baseVersion." }
-            if ($download.WorldGuid -ne $remoteGuid) { throw 'El worldGuid de la descarga no coincide con el lock.' }
+            if ($download.Version -ne $baseVersion) { throw "The download returned version $($download.Version), but the lock fixed base version $baseVersion." }
+            if ($download.WorldGuid -ne $remoteGuid) { throw 'The downloaded worldGuid does not match the lock.' }
 
             $manifest = Read-ArchiveManifest -ZipPath $download.Path
             if ((Normalize-WorldGuid -WorldGuid ([string]$manifest.worldGuid)) -ne $remoteGuid) {
-                throw 'El manifest.json del ZIP no coincide con el worldGuid remoto.'
+                throw 'The ZIP manifest.json does not match the remote worldGuid.'
             }
 
-            Write-Info 'Instalando la copia remota validada...'
+            Write-Info 'Installing the validated remote copy...'
             Install-DownloadedSave -ZipPath $download.Path -WorldGuid $remoteGuid
             Save-LocalState -Version $baseVersion -WorldGuid $remoteGuid -Sha256 $download.Sha256 -UpdatedBy ([string]$status.updatedBy)
             $localGuid = $remoteGuid
-            Write-Success 'Save remoto instalado.'
+            Write-Success 'Remote save installed.'
         }
         else {
             $localGuid = $remoteGuid
-            Write-Success 'La copia local ya coincide con la versión remota.'
+            Write-Success 'The local copy already matches the remote version.'
         }
     }
 
@@ -1260,52 +1260,52 @@ try {
     if ($arguments.Count -gt 0) { $startParameters.ArgumentList = $arguments }
     $serverProcess = Start-Process @startParameters
 
-    Write-Info 'Esperando a la REST API local para verificar el mundo...'
+    Write-Info 'Waiting for the local REST API to verify the world...'
     $serverInfo = Wait-ForPalRestInfo -Process $serverProcess -RestPassword $secrets.RestPassword -HeartbeatJob $heartbeatJob
     $verifiedWorldGuid = Normalize-WorldGuid -WorldGuid ([string]$serverInfo.worldguid)
     if ($verifiedWorldGuid -ne $localGuid) {
-        throw "PalServer cargó $verifiedWorldGuid, pero el script preparó $localGuid. No se permitirá jugar ni subir."
+        throw "PalServer loaded $verifiedWorldGuid, but the script prepared $localGuid. Playing and uploading will not be allowed."
     }
     if ($baseVersion -gt 0) {
         $authoritativeGuid = Normalize-WorldGuid -WorldGuid ([string]$lock.worldGuid)
         if ($verifiedWorldGuid -ne $authoritativeGuid) {
-            throw "PalServer cargó $verifiedWorldGuid, pero la web autoriza $authoritativeGuid."
+            throw "PalServer loaded $verifiedWorldGuid, but the remote authority allows $authoritativeGuid."
         }
     }
 
-    Write-Success ("Mundo verificado mediante REST: $verifiedWorldGuid. Servidor $($serverInfo.version).")
+    Write-Success ("World verified through REST: $verifiedWorldGuid. Server $($serverInfo.version).")
     Save-PendingSession -BaseVersion $baseVersion -WorldGuid $verifiedWorldGuid -SessionId $sessionId
     $sessionEntered = $true
 
     $endRequest = Wait-ForSessionEndRequest -Process $serverProcess -HeartbeatJob $heartbeatJob
     if ($endRequest.Reason -eq 'HeartbeatFailed') {
-        Write-ErrorText 'Se perdió el heartbeat tres veces. El servidor se cerrará y NO se publicará automáticamente.'
+        Write-ErrorText 'The heartbeat failed three times. The server will shut down and progress will NOT be published automatically.'
         Stop-PalServerGracefully -Process $serverProcess -RestPassword $secrets.RestPassword -ExpectedWorldGuid $verifiedWorldGuid
-        throw 'Lock web no fiable. El save local queda pendiente y protegido.'
+        throw 'Remote lock is no longer reliable. The local save remains pending and protected.'
     }
     elseif ($endRequest.Reason -eq 'UserRequested') {
         Stop-PalServerGracefully -Process $serverProcess -RestPassword $secrets.RestPassword -ExpectedWorldGuid $verifiedWorldGuid
     }
     else {
-        Write-WarningText 'PalServer se cerró por otro medio. Se usará su último guardado disponible.'
+        Write-WarningText 'PalServer was stopped by another mechanism. Its latest available save will be used.'
     }
 
     $serverProcess.Refresh()
     if (-not $serverProcess.HasExited) {
-        throw 'PalServer sigue abierto; no se comprimirá el save.'
+        throw 'PalServer is still running; the save will not be archived.'
     }
     if ((Get-HeartbeatStatus -Job $heartbeatJob) -eq 'fatal') {
-        throw 'El heartbeat ya no es válido. No se publicará automáticamente.'
+        throw 'The heartbeat is no longer valid. Progress will not be published automatically.'
     }
 
     $archiveName = 'palworld-save-{0}-base-v{1:D6}.zip' -f ([string]$script:Config.PlayerName), $baseVersion
     $archivePath = Join-Path $TempRoot $archiveName
-    Write-Info 'Comprimiendo el save cerrado...'
+    Write-Info 'Archiving the closed save...'
     $finalArchive = New-WorldArchive -WorldGuid $verifiedWorldGuid -Destination $archivePath -BaseVersion $baseVersion -ServerVersion ([string]$serverInfo.version) -Purpose 'web-upload'
     Save-PendingSession -BaseVersion $baseVersion -WorldGuid $verifiedWorldGuid -SessionId $sessionId -ArchivePath $archivePath -ArchiveSha256 $finalArchive.Sha256
-    Write-Success ("ZIP creado: {0:N2} MiB; SHA-256 {1}" -f ($finalArchive.Size / 1MB), $finalArchive.Sha256)
+    Write-Success ("ZIP created: {0:N2} MiB; SHA-256 {1}" -f ($finalArchive.Size / 1MB), $finalArchive.Sha256)
 
-    Write-Info 'Subiendo la nueva versión al servicio central...'
+    Write-Info 'Uploading the new version to the central service...'
     try {
         $upload = Upload-SaveArchive -Token $secrets.ApiToken -ZipPath $archivePath -SessionId $sessionId -BaseVersion $baseVersion -Sha256 $finalArchive.Sha256 -WorldGuid $verifiedWorldGuid
         $uploadConfirmed = $true
@@ -1313,11 +1313,11 @@ try {
         Save-LocalState -Version ([int]$upload.version) -WorldGuid ([string]$upload.worldGuid) -Sha256 ([string]$upload.sha256) -UpdatedBy ([string]$script:Config.PlayerName)
         Remove-Item -LiteralPath $PendingPath -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
-        Write-Success "Partida publicada como versión $($upload.version)."
+        Write-Success "Save published as version $($upload.version)."
     }
     catch {
-        Write-WarningText "La respuesta de subida falló: $($_.Exception.Message)"
-        Write-Info 'Comprobando si el servidor recibió la subida a pesar del corte...'
+        Write-WarningText "The upload response failed: $($_.Exception.Message)"
+        Write-Info 'Checking whether the server received the upload despite the connection loss...'
         if (Reconcile-Upload -Token $secrets.ApiToken -BaseVersion $baseVersion -Sha256 $finalArchive.Sha256 -WorldGuid $verifiedWorldGuid) {
             $remoteStatus = Invoke-ApiJson -Method GET -Path 'status' -Token $secrets.ApiToken
             $uploadConfirmed = $true
@@ -1325,13 +1325,13 @@ try {
             Save-LocalState -Version ([int]$remoteStatus.version) -WorldGuid ([string]$remoteStatus.worldGuid) -Sha256 ([string]$remoteStatus.sha256) -UpdatedBy ([string]$remoteStatus.updatedBy)
             Remove-Item -LiteralPath $PendingPath -Force -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
-            Write-Success "Subida reconciliada: versión remota $($remoteStatus.version)."
+            Write-Success "Upload reconciled: remote version $($remoteStatus.version)."
         }
         else {
             $preserved = Join-Path $PendingUploadRoot ("{0}_{1}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), [IO.Path]::GetFileName($archivePath))
             Move-Item -LiteralPath $archivePath -Destination $preserved -Force
             Save-PendingSession -BaseVersion $baseVersion -WorldGuid $verifiedWorldGuid -SessionId $sessionId -ArchivePath $preserved -ArchiveSha256 $finalArchive.Sha256
-            throw "La subida no pudo confirmarse. El ZIP se conserva en: $preserved"
+            throw "The upload could not be confirmed. The ZIP is preserved at: $preserved"
         }
     }
 }
@@ -1343,7 +1343,7 @@ catch {
         try {
             $serverProcess.Refresh()
             if (-not $serverProcess.HasExited -and $null -ne $secrets) {
-                Write-WarningText 'Intentando cerrar PalServer de forma limpia tras el error...'
+                Write-WarningText 'Attempting a clean PalServer shutdown after the error...'
                 if (Test-ValidWorldGuid -WorldGuid $verifiedWorldGuid) {
                     Stop-PalServerGracefully -Process $serverProcess -RestPassword $secrets.RestPassword -ExpectedWorldGuid $verifiedWorldGuid
                 }
@@ -1353,7 +1353,7 @@ catch {
             }
         }
         catch {
-            Write-ErrorText "No se pudo cerrar PalServer automáticamente: $($_.Exception.Message)"
+            Write-ErrorText "Could not stop PalServer automatically: $($_.Exception.Message)"
         }
     }
 
@@ -1362,7 +1362,7 @@ catch {
         $lockHeld = $false
     }
     elseif ($lockHeld -and $sessionEntered) {
-        Write-WarningText 'El lock no se libera tras una sesión modificada sin publicar; caducará al cesar el heartbeat. No inicies el servidor en el otro PC hasta revisar el estado.'
+        Write-WarningText 'The lock is not released after an unpublished modified session; it will expire when heartbeats stop. Do not start the server on the other PC until the state is reviewed.'
     }
 
     $scriptExitCode = 1
@@ -1377,14 +1377,14 @@ finally {
 
 if ($uploadConfirmed) {
     Write-Host ''
-    Write-Success 'Proceso terminado. La partida remota es la autoridad más reciente.'
+    Write-Success 'Process complete. The remote save is the latest authority.'
 }
 elseif ($TestOnly -or $SetupSecrets) {
-    # Ya se mostró el resultado correspondiente.
+    # The corresponding result was already displayed.
 }
 else {
     Write-Host ''
-    Write-WarningText 'Proceso terminado sin confirmar una nueva publicación. Revisa los mensajes anteriores y data\pending-uploads.'
+    Write-WarningText 'Process ended without confirming a new publication. Review the previous messages and data\pending-uploads.'
 }
 
 exit $scriptExitCode

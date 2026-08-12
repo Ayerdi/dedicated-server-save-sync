@@ -12,16 +12,16 @@ RELEASE_ZIP_DIGEST="sha256:4ee67ecdb617374c74f39db3819d6a6dae50618111102fa8a196c
 
 if [[ "${1:-}" != "--apply" || $# -ne 1 ]]; then
   printf 'Uso: %s --apply\n' "$0" >&2
-  printf 'Solo debe ejecutarse después de cambiar manualmente la visibilidad a pública.\n' >&2
+  printf 'Run this only after manually changing repository visibility to public.\n' >&2
   exit 2
 fi
 
-command -v gh >/dev/null || { printf 'Falta GitHub CLI (gh).\n' >&2; exit 1; }
-command -v git >/dev/null || { printf 'Falta git.\n' >&2; exit 1; }
+command -v gh >/dev/null || { printf 'GitHub CLI (gh) is required.\n' >&2; exit 1; }
+command -v git >/dev/null || { printf 'git is required.\n' >&2; exit 1; }
 cd "${ROOT_DIR}"
 
 gh auth status >/dev/null 2>&1 || {
-  printf 'GitHub CLI no tiene una sesión válida. Ejecuta gh auth login.\n' >&2
+  printf 'GitHub CLI has no valid session. Run gh auth login.\n' >&2
   exit 1
 }
 
@@ -32,13 +32,13 @@ if [[ "${visibility}" != "PUBLIC" ]]; then
   exit 1
 fi
 
-[[ -f LICENSE ]] || { printf 'Falta LICENSE.\n' >&2; exit 1; }
+[[ -f LICENSE ]] || { printf 'LICENSE is missing.\n' >&2; exit 1; }
 [[ -z "$(git status --short)" ]] || {
-  printf 'El árbol Git debe estar limpio antes de configurar GitHub.\n' >&2
+  printf 'The Git tree must be clean before configuring GitHub.\n' >&2
   exit 1
 }
 [[ "$(git branch --show-current)" == "main" ]] || {
-  printf 'Ejecuta la configuración desde la rama main.\n' >&2
+  printf 'Run repository configuration from the main branch.\n' >&2
   exit 1
 }
 
@@ -46,18 +46,18 @@ git fetch --quiet origin main --tags
 head_sha="$(git rev-parse HEAD)"
 remote_sha="$(git rev-parse origin/main)"
 if [[ "${head_sha}" != "${remote_sha}" ]]; then
-  printf 'HEAD (%s) no coincide con origin/main (%s). Actualiza el checkout.\n' \
+  printf 'HEAD (%s) does not match origin/main (%s). Update the checkout.\n' \
     "${head_sha}" "${remote_sha}" >&2
   exit 1
 fi
 
 tag_commit="$(git rev-list -n1 "${RELEASE_TAG}" 2>/dev/null || true)"
 if [[ -z "${tag_commit}" ]]; then
-  printf 'No existe el tag auditado %s.\n' "${RELEASE_TAG}" >&2
+  printf 'The audited tag does not exist: %s.\n' "${RELEASE_TAG}" >&2
   exit 1
 fi
 if ! git merge-base --is-ancestor "${tag_commit}" "${head_sha}"; then
-  printf 'El tag %s (%s) no es ancestro del main actual (%s).\n' \
+  printf 'El tag %s (%s) is not an ancestor of the current main (%s).\n' \
     "${RELEASE_TAG}" "${tag_commit}" "${head_sha}" >&2
   exit 1
 fi
@@ -66,8 +66,8 @@ ci_state="$(gh run list --repo "${REPOSITORY}" --workflow ci.yml --branch main -
   --json headSha,status,conclusion \
   --jq '.[0] | (.headSha // "") + ":" + (.status // "") + ":" + (.conclusion // "")')"
 if [[ "${ci_state}" != "${head_sha}:completed:success" ]]; then
-  printf 'La CI más reciente de main no está verde para HEAD %s (%s).\n' \
-    "${head_sha}" "${ci_state:-sin ejecución}" >&2
+  printf 'The latest main CI is not green for HEAD %s (%s).\n' \
+    "${head_sha}" "${ci_state:-no run}" >&2
   exit 1
 fi
 
@@ -84,14 +84,14 @@ if [[ "${release_target}" != "${tag_commit}" || \
       "${release_assets}" != "${expected_assets}" || \
       "${zip_digest}" != "${RELEASE_ZIP_DIGEST}" ]]; then
   cat >&2 <<EOF
-La release ${RELEASE_TAG} no coincide con el candidato auditado.
+Release ${RELEASE_TAG} does not match the audited candidate.
   tag commit: ${tag_commit}
   release target: ${release_target}
   draft/prerelease: ${release_draft}/${release_prerelease}
   assets: ${release_assets}
   ZIP digest: ${zip_digest}
   esperado: ${RELEASE_ZIP_DIGEST}
-No se aplicará la configuración pública.
+Public repository configuration will not be applied.
 EOF
   exit 1
 fi
@@ -152,11 +152,11 @@ gh api --method PUT "repos/${REPOSITORY}/pages" \
   -f build_type=workflow \
   -F https_enforced=true >/dev/null
 
-printf 'Configuración pública aplicada a %s.\n' "${REPOSITORY}"
+printf 'Public repository configuration applied to %s.\n' "${REPOSITORY}"
 printf 'Release %s verificada: %s\n' "${RELEASE_TAG}" "${RELEASE_ZIP_DIGEST}"
 printf 'GitHub Pages: %s\n' "${PAGES_URL}"
-printf 'Disparando despliegue de Pages...\n'
+printf 'Dispatching Pages deployment...\n'
 gh workflow run pages.yml --repo "${REPOSITORY}" --ref main
 
-printf '\nWiki habilitada. Para sincronizar su contenido versionado ejecuta:\n'
+printf '\nWiki enabled. To synchronize the versioned content run:\n'
 printf '  bash scripts/publish-wiki.sh --apply\n'

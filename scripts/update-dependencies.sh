@@ -20,4 +20,4 @@ docker run --rm -v "${ROOT_DIR}:/repo:ro" -w /repo "${PYTHON_IMAGE}" sh -ec '
   pip-audit -r requirements.txt --progress-spinner=off
 '
 
-printf 'Locks regenerados y auditados. Revisa el diff antes de confirmar cambios.\n'
+printf 'Locks regenerated and audited. Review the diff before committing changes.\n'

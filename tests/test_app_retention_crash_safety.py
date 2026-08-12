@@ -70,15 +70,15 @@ def test_backend_retention_commits_metadata_before_filesystem_reconciliation(
                 RuntimeError("simulated crash after metadata commit")
             ),
         )
-        # La reconciliación física es best-effort: un fallo después del COMMIT
-        # no debe revertir metadata ni impedir que el backend arranque.
+        # Physical reconciliation is best-effort: a failure after COMMIT
+        # must not roll back metadata or prevent backend startup.
         app_module.create_app(app_config(storage, retention=1))
 
     assert read_versions(db_path) == [2]
     assert old_path.is_file()
     assert current_path.is_file()
 
-    # Un arranque posterior revalida referencias y elimina el ZIP huérfano.
+    # A later startup revalidates references and removes the orphan ZIP.
     app_module.create_app(app_config(storage, retention=1))
     assert read_versions(db_path) == [2]
     assert not old_path.exists()

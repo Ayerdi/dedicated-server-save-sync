@@ -6,13 +6,13 @@ def prune_canonical_versions_locked(
     retention_per_slot,
     identity_for_username,
 ):
-    """Aplica la retención únicamente a metadata SQLite.
+    """Applies retention to SQLite metadata only.
 
-    El llamador debe mantener una transacción de escritura. Las versiones con
-    una fila en ``pending_backups`` permanecen protegidas hasta que el
-    supervisor durable resuelva el backup. No se toca el filesystem aquí: así
-    un crash antes del COMMIT nunca puede dejar metadata restaurada por rollback
-    apuntando a un ZIP que ya fue eliminado.
+    The caller must hold a write transaction. Versions with
+    a row in ``pending_backups`` remain protected until
+    the durable supervisor resolves the backup. The filesystem is not touched here, so
+    a crash before COMMIT can never leave rollback-restored metadata
+    pointing to a ZIP that has already been deleted.
     """
     rows = db.execute(
         "SELECT v.version,v.path,u.username FROM versions v "
@@ -32,13 +32,13 @@ def prune_canonical_versions_locked(
 
 
 def reconcile_unreferenced_files_locked(db, storage, logger):
-    """Elimina ZIPs no referenciados después de confirmar la metadata.
+    """Deletes unreferenced ZIPs after metadata is committed.
 
-    Debe ejecutarse bajo un nuevo ``BEGIN IMMEDIATE``. La segunda adquisición
-    revalida referencias antes de cada borrado y evita que una publicación
-    concurrente reutilice un nombre de ZIP huérfano entre el COMMIT de retención
-    y el unlink. Un crash aquí solo puede dejar un fichero huérfano, nunca una
-    fila SQLite que apunte a un fichero borrado por una transacción revertida.
+    Must run under a new ``BEGIN IMMEDIATE``. The second acquisition
+    revalidates references before each delete and prevents a concurrent publication
+    from reusing an orphan ZIP name between the retention COMMIT
+    and unlink. A crash here can leave only an orphan file, never a
+    SQLite row pointing to a file deleted by a rolled-back transaction.
     """
     storage = Path(storage)
     referenced = {
@@ -49,6 +49,6 @@ def reconcile_unreferenced_files_locked(db, storage, logger):
         try:
             path.unlink(missing_ok=True)
         except OSError:
-            # La metadata obsoleta ya quedó confirmada. El ZIP huérfano se
-            # reintentará en el siguiente cleanup/arranque.
-            logger.exception("No se pudo eliminar ZIP obsoleto %s", path)
+            # Obsolete metadata has already been committed. The orphan ZIP
+            # will be retried during the next cleanup/startup.
+            logger.exception("Could not remove obsolete ZIP %s", path)

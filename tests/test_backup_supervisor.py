@@ -277,7 +277,7 @@ def test_launch_failure_is_audited_without_losing_publication(tmp_path):
     relative = queue_version(app, storage, 1)
 
     def broken_popen(*_args, **_kwargs):
-        raise OSError("restic no disponible")
+        raise OSError("restic unavailable")
 
     supervisor = make_supervisor(storage, db_path, broken_popen)
     assert supervisor.run_once() is True
@@ -402,7 +402,7 @@ def test_finalization_rollback_keeps_job_for_retry(tmp_path, monkeypatch):
 
         def execute(self, sql, params=()):
             if sql.startswith("INSERT INTO audit") and params[0] == "backup_hook_completed":
-                raise sqlite3.OperationalError("auditoría no disponible")
+                raise sqlite3.OperationalError("audit unavailable")
             return self.wrapped.execute(sql, params)
 
         def commit(self):

@@ -1,149 +1,27 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Sincronización segura de saves para alternar el servidor dedicado de Palworld entre varios PCs.">
+  <meta name="description" content="Concurrency-safe save synchronization for alternating Palworld dedicated-server hosts.">
   <link rel="canonical" href="https://ayerdi.github.io/dedicated-server-save-sync/">
-  <link rel="alternate" hreflang="es" href="https://ayerdi.github.io/dedicated-server-save-sync/">
-  <link rel="alternate" hreflang="en" href="https://ayerdi.github.io/dedicated-server-save-sync/en/">
-  <link rel="alternate" hreflang="x-default" href="https://ayerdi.github.io/dedicated-server-save-sync/">
   <meta name="theme-color" content="#0b1020">
   <title>Dedicated Server Save Sync · Palworld</title>
   <link rel="stylesheet" href="./assets/style.css">
 </head>
 <body>
-<a class="skip-link" href="#contenido">Saltar al contenido</a>
-<nav aria-label="Navegación principal">
-  <div class="wrap navbar">
-    <a class="brand" href="./">SAVE SYNC</a>
-    <div class="navlinks">
-      <a href="#como">Cómo funciona</a>
-      <a href="#seguridad">Seguridad</a>
-      <a href="#instalar">Instalar</a>
-      <a href="https://github.com/Ayerdi/dedicated-server-save-sync/wiki">Wiki</a>
-      <a href="https://github.com/Ayerdi/dedicated-server-save-sync">GitHub</a>
-      <a class="lang" href="./en/" lang="en" hreflang="en">EN</a>
-    </div>
-  </div>
-</nav>
-
-<header class="hero">
-  <div class="wrap">
-    <span class="kicker">v2.2.1 · estable · Palworld</span>
-    <h1>Tu save autoritativo.<br>El host puede cambiar.</h1>
-    <p>
-      Dedicated Server Save Sync coordina la misma partida de Palworld entre
-      varios PCs sin mantener un servidor de juego encendido 24/7 y sin pasar
-      ZIPs manualmente.
-    </p>
-    <div class="actions">
-      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/tag/v2.2.1">Descargar v2.2.1</a>
-      <a class="button" href="#instalar">Instalación</a>
-      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/blob/v2.2.1/docs/ARCHITECTURE.md">Arquitectura</a>
-    </div>
-  </div>
-</header>
-
-<main id="contenido">
-<section id="como">
-  <div class="wrap">
-    <div class="section-title">
-      <h2>Evita la pregunta peligrosa: “¿cuál era el save bueno?”</h2>
-      <p>El backend mantiene una única autoridad y cada host debe demostrar que parte de la versión correcta.</p>
-    </div>
-    <div class="flow" aria-label="Flujo de inicio">
-      <div>1 · status + lock</div><div class="arrow" aria-hidden="true">→</div>
-      <div>2 · descarga si procede</div><div class="arrow" aria-hidden="true">→</div>
-      <div>3 · PalServer + heartbeat</div>
-    </div>
-    <div class="flow flow-secondary" aria-label="Flujo de publicación">
-      <div>4 · save + shutdown</div><div class="arrow" aria-hidden="true">→</div>
-      <div>5 · ZIP + SHA-256</div><div class="arrow" aria-hidden="true">→</div>
-      <div>6 · upload con baseVersion</div>
-    </div>
-  </div>
-</section>
-
-<section id="seguridad">
-  <div class="wrap">
-    <div class="section-title">
-      <h2>Diseñado para fallar sin pisar progreso</h2>
-      <p>El objetivo no es “subir una carpeta”, sino mantener invariantes incluso con dos hosts, red inestable o procesos que fallan.</p>
-    </div>
-    <div class="grid">
-      <article class="card"><h3>Concurrencia</h3><p>Lock exclusivo, TTL, heartbeat y control optimista con <code>baseVersion</code>.</p></article>
-      <article class="card"><h3>Identidad</h3><p>Palworld se valida con <code>worldGuid</code> para impedir que otro mundo se publique por error.</p></article>
-      <article class="card"><h3>Publicación atómica</h3><p>ZIP temporal, validación defensiva, SHA-256 y cambio transaccional de la autoridad SQLite.</p></article>
-      <article class="card"><h3>Recuperación</h3><p>Historial, restore como versión nueva, ZIP pendiente si una publicación no puede confirmarse y rollback operativo.</p></article>
-      <article class="card"><h3>Backup durable</h3><p>Cola SQLite y supervisor independiente de Gunicorn, con timeout, reintento, auditoría y retención crash-safe.</p></article>
-      <article class="card"><h3>Secretos</h3><p>Hashes Bearer en servidor y DPAPI en Windows. Los archivos runtime quedan fuera del repositorio y de las releases.</p></article>
-    </div>
-  </div>
-</section>
-
-<section id="instalar">
-  <div class="wrap">
-    <div class="section-title">
-      <h2>Backend self-hosted + cliente Windows</h2>
-      <p>En producción, cliente y backend deben corresponder a la misma release estable.</p>
-    </div>
-    <div class="status">
-      <div class="card">
-        <h3>Backend v2.2.1</h3>
-        <pre>git clone --branch v2.2.1 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
+<a class="skip-link" href="#content">Skip to content</a>
+<nav aria-label="Primary navigation"><div class="wrap navbar"><a class="brand" href="./">SAVE SYNC</a><div class="navlinks"><a href="#how">How it works</a><a href="#safety">Safety</a><a href="#install">Install</a><a href="https://github.com/Ayerdi/dedicated-server-save-sync/wiki">Wiki</a><a href="https://github.com/Ayerdi/dedicated-server-save-sync">GitHub</a></div></div></nav>
+<header class="hero"><div class="wrap"><span class="kicker">v2.2.2 · stable · Palworld</span><h1>One authoritative save.<br>The host can change.</h1><p>Coordinate the same Palworld world across multiple PCs without keeping one game server online 24/7 and without passing ZIP files around manually.</p><div class="actions"><a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/tag/v2.2.2">Download v2.2.2</a><a class="button" href="#install">Installation</a><a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/wiki">Wiki · English / Español</a></div></div></header>
+<main id="content">
+<section id="how"><div class="wrap"><div class="section-title"><h2>Stop asking “which save was the good one?”</h2><p>The backend keeps one source of truth. Every host must prove it started from the right version before it can publish progress.</p></div><div class="flow" aria-label="Session startup flow"><div>1 · status + lock</div><div class="arrow" aria-hidden="true">→</div><div>2 · download if needed</div><div class="arrow" aria-hidden="true">→</div><div>3 · PalServer + heartbeat</div></div><div class="flow flow-secondary" aria-label="Publication flow"><div>4 · save + shutdown</div><div class="arrow" aria-hidden="true">→</div><div>5 · ZIP + SHA-256</div><div class="arrow" aria-hidden="true">→</div><div>6 · upload with baseVersion</div></div></div></section>
+<section id="safety"><div class="wrap"><div class="section-title"><h2>Designed to fail without silently overwriting progress</h2><p>The difficult part is not uploading a folder. It is preserving ownership and history when hosts, networks or processes fail.</p></div><div class="grid"><article class="card"><h3>Concurrency</h3><p>Exclusive lock, TTL, heartbeat and optimistic concurrency through <code>baseVersion</code>.</p></article><article class="card"><h3>Identity</h3><p>Palworld uses <code>worldGuid</code> so a different world cannot be published accidentally.</p></article><article class="card"><h3>Atomic publication</h3><p>Temporary ZIP, defensive validation, SHA-256 and transactional SQLite authority changes.</p></article><article class="card"><h3>Recovery</h3><p>Version history, restore-as-new-version, pending upload recovery and rollback procedures.</p></article><article class="card"><h3>Durable backup</h3><p>SQLite queue and a supervisor independent from Gunicorn, with timeout, retry and crash-safe retention.</p></article><article class="card"><h3>Secrets</h3><p>Bearer hashes on the backend and DPAPI on Windows. Runtime data stays out of source and release assets.</p></article></div></div></section>
+<section id="install"><div class="wrap"><div class="section-title"><h2>Self-hosted backend + Windows client</h2><p>Use client and backend from the same stable product release.</p></div><div class="status"><div class="card"><h3>Backend v2.2.2</h3><pre>git clone --branch v2.2.2 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
 cd dedicated-server-save-sync
 config/deploy.sh --init-env
-config/deploy.sh</pre>
-        <p>Requiere Docker Compose, HTTPS, almacenamiento privado y Traefik/ForwardAuth o modo API-only.</p>
-      </div>
-      <div class="card">
-        <h3>Cliente v2.2.1</h3>
-        <p><strong>1.</strong> Descarga el ZIP y su archivo <code>.sha256</code>.</p>
-        <p><strong>2.</strong> Verifica el SHA-256 antes de extraerlo.</p>
-        <p><strong>3.</strong> Copia <code>config.example.json</code> y configura URL y PalServer.</p>
-        <p><strong>4.</strong> Ejecuta <code>Configurar-secretos.cmd</code> y <code>Probar-conexion.cmd</code>.</p>
-        <p><strong>5.</strong> Inicia con <code>Iniciar-PalworldSync.cmd</code>.</p>
-      </div>
-    </div>
-    <p class="note">La REST local de Palworld debe escuchar solo en localhost. No abras ese puerto en el router.</p>
-  </div>
-</section>
-
-<section>
-  <div class="wrap">
-    <div class="section-title">
-      <h2>Estado de backup que no inventa certezas</h2>
-      <p>El panel separa si el automático está habilitado ahora de si el hook de la versión actual confirmó éxito.</p>
-    </div>
-    <div class="grid">
-      <div class="card"><h3>completed</h3><p>Existe un resultado auditado correcto para la versión vigente.</p></div>
-      <div class="card"><h3>pending</h3><p>La versión vigente tiene un trabajo de backup en la cola durable.</p></div>
-      <div class="card"><h3>unknown</h3><p>No hay evidencia suficiente; un pending antiguo se conserva y se señala de forma conservadora.</p></div>
-    </div>
-  </div>
-</section>
-
-<section>
-  <div class="wrap">
-    <div class="section-title">
-      <h2>Feature-complete, no abandonado</h2>
-      <p>v2.2.1 cierra el hardening operativo previo a la publicación pública. Continúan bugs, seguridad, dependencias y compatibilidad.</p>
-    </div>
-    <div class="actions">
-      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/tag/v2.2.1">Release v2.2.1</a>
-      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/wiki">Wiki</a>
-      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/discussions">Discussions</a>
-    </div>
-  </div>
-</section>
+config/deploy.sh</pre><p>Requires Docker Compose, HTTPS and private storage.</p></div><div class="card"><h3>Windows client v2.2.2</h3><p><strong>1.</strong> Download the ZIP and <code>.sha256</code>.</p><p><strong>2.</strong> Verify the checksum.</p><p><strong>3.</strong> Configure <code>config.json</code>.</p><p><strong>4.</strong> Run <code>Configure-Secrets.cmd</code> and <code>Test-Connection.cmd</code>.</p><p><strong>5.</strong> Start with <code>Start-PalworldSync.cmd</code>.</p></div></div><p class="note">Palworld's local REST API must listen on localhost only. Do not expose that port through your router.</p></div></section>
+<section><div class="wrap"><div class="section-title"><h2>Feature-complete, not abandoned</h2><p>The Palworld reference is maintained for bugs, security, dependencies and compatibility. The broader multi-game and device/cloud-sync product will live separately.</p></div><div class="actions"><a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/tag/v2.2.2">Release v2.2.2</a><a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/wiki">Wiki</a><a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/discussions">Discussions</a></div></div></section>
 </main>
-
-<footer>
-  <div class="wrap">
-    Apache-2.0 · Proyecto comunitario no afiliado con Pocketpair, Inc. ·
-    <a href="https://github.com/Ayerdi/dedicated-server-save-sync/security/policy">Seguridad</a>
-  </div>
-</footer>
+<footer><div class="wrap">Apache-2.0 · Community project not affiliated with Pocketpair, Inc. · <a href="https://github.com/Ayerdi/dedicated-server-save-sync/security/policy">Security</a></div></footer>
 </body>
 </html>

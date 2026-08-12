@@ -14,7 +14,7 @@ case "$(uname -m)" in
     EXPECTED_SHA256="5f2edbe1f49f7b920f9e06e90759947d3c5dfc16f752fb93aaafc17e9d14cf07"
     ;;
   *)
-    printf 'Arquitectura no soportada por este comprobador: %s\n' "$(uname -m)" >&2
+    printf 'Unsupported architecture for this checker: %s\n' "$(uname -m)" >&2
     exit 2
     ;;
 esac

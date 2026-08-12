@@ -19,7 +19,7 @@ else
 fi
 
 if (( ${#tracked_files[@]} == 0 )); then
-  printf 'No hay archivos para revisar.\n' >&2
+  printf 'There are no files to check.\n' >&2
   exit 1
 fi
 
@@ -27,7 +27,7 @@ for file in "${tracked_files[@]}"; do
   normalized="${file#./}"
   case "${normalized}" in
     .env|.env.local|client/config.json)
-      printf 'Archivo privado incluido: %s\n' "${normalized}" >&2
+      printf 'Private file included: %s\n' "${normalized}" >&2
       exit 1
       ;;
   esac
@@ -45,4 +45,4 @@ if printf '%s\n' "${tracked_files[@]}" | grep -E \
   exit 1
 fi
 
-printf 'Repositorio sin patrones secretos ni artefactos runtime conocidos.\n'
+printf 'Repository contains no known secret patterns or runtime artifacts.\n'

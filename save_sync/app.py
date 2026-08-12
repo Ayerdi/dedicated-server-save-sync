@@ -149,18 +149,18 @@ def create_app(config=None):
             app.config[key] = raw
     app.config.update(config or {})
     if int(app.config["SAVE_SYNC_RETENTION_PER_SLOT"]) < 1:
-        raise RuntimeError("SAVE_SYNC_RETENTION_PER_SLOT debe ser >= 1")
+        raise RuntimeError("SAVE_SYNC_RETENTION_PER_SLOT must be >= 1")
     if int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"]) < 1:
-        raise RuntimeError("SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS debe ser >= 1")
+        raise RuntimeError("SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS must be >= 1")
     game = dict(DEFAULT_GAME)
     game_config_path = str(app.config.get("SAVE_SYNC_GAME_CONFIG_PATH", "")).strip()
     if game_config_path:
         try:
             loaded_game = json.loads(Path(game_config_path).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise RuntimeError("No se pudo cargar la configuración del juego") from exc
+            raise RuntimeError("Could not load the game configuration") from exc
         if not isinstance(loaded_game, dict):
-            raise RuntimeError("La configuración del juego debe ser un objeto JSON")
+            raise RuntimeError("The game configuration must be a JSON object")
         game.update(loaded_game)
     game_key = str(game.get("key", "")).strip().lower()
     expected_game_key = str(app.config["SAVE_SYNC_GAME_KEY"]).strip().lower()
@@ -169,19 +169,19 @@ def create_app(config=None):
     identity_label = str(game.get("identityLabel", "")).strip()
     normalization = str(game.get("identityNormalization", "none")).strip().lower()
     if not GAME_KEY_RE.fullmatch(game_key):
-        raise RuntimeError("game.key debe usar minúsculas, números y guiones")
+        raise RuntimeError("game.key must use lowercase letters, numbers and hyphens")
     if expected_game_key != game_key:
-        raise RuntimeError("SAVE_SYNC_GAME_KEY no coincide con game.key")
+        raise RuntimeError("SAVE_SYNC_GAME_KEY does not match game.key")
     if not display_game or not re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,63}", identity_field):
-        raise RuntimeError("displayName o identityField no son válidos")
+        raise RuntimeError("displayName or identityField are invalid")
     if not identity_label or normalization not in {"none", "uppercase", "lowercase"}:
-        raise RuntimeError("identityLabel o identityNormalization no son válidos")
+        raise RuntimeError("identityLabel or identityNormalization are invalid")
     try:
         identity_re = re.compile(str(game.get("identityPattern", "")))
     except re.error as exc:
-        raise RuntimeError("identityPattern no es una expresión regular válida") from exc
+        raise RuntimeError("identityPattern is not a valid regular expression") from exc
     if not game.get("identityPattern"):
-        raise RuntimeError("identityPattern es obligatorio")
+        raise RuntimeError("identityPattern is required")
     legacy_palworld = bool(game.get("legacyPalworldRoutes", False))
 
     def normalize_identity_value(value):
@@ -204,18 +204,18 @@ def create_app(config=None):
     try:
         raw_identities = json.loads(app.config["SAVE_SYNC_USER_IDENTITIES_JSON"])
     except (TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON no es JSON válido") from exc
+        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON is not valid JSON") from exc
     if not isinstance(raw_identities, dict):
-        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON debe ser un objeto JSON")  # noqa: TRY004
+        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON must be a JSON object")  # noqa: TRY004
     identities = {}
     for username, profile in raw_identities.items():
         if not isinstance(profile, dict):
-            raise RuntimeError(f"Perfil de identidad inválido para {username}")  # noqa: TRY004
+            raise RuntimeError(f"Invalid identity profile for {username}")  # noqa: TRY004
         display = str(profile.get("displayName", "")).strip()
         slot = str(profile.get("slot", "")).strip()
         if not username.strip() or not display or not slot:
             raise RuntimeError(
-                "Cada identidad necesita username, displayName y slot no vacíos"
+                "Each identity requires non-empty username, displayName and slot values"
             )
         identities[username.casefold()] = {"displayName": display, "slot": slot}
     if not app.config.get("TESTING"):
@@ -223,9 +223,9 @@ def create_app(config=None):
             value = str(
                 app.config.get(required_secret) or os.environ.get(required_secret, "")
             )
-            if len(value) < 32 or value.startswith("REEMPLAZAR"):
+            if len(value) < 32 or value.startswith(("REPLACE", "REEMPLAZAR")):
                 raise RuntimeError(
-                    f"{required_secret} debe configurarse con al menos 32 caracteres aleatorios"
+                    f"{required_secret} must be configured with at least 32 random characters"
                 )
     app.config["MAX_CONTENT_LENGTH"] = (
         int(app.config["SAVE_SYNC_MAX_UPLOAD_SIZE"]) + 1024 * 1024
@@ -258,21 +258,21 @@ def create_app(config=None):
             os.close(descriptor)
 
     app.extensions["save_sync_connect"] = connect
-    # El lock de fichero abarca todo el bootstrap porque PRAGMA
-    # journal_mode=WAL puede fallar antes de que BEGIN IMMEDIATE llegue a
-    # serializar la migración. El almacenamiento soportado es Linux local.
+    # The file lock covers the entire bootstrap because PRAGMA
+    # journal_mode=WAL can fail before BEGIN IMMEDIATE gets to
+    # serialize the migration. Supported storage is local Linux storage.
     with schema_lock(), connect() as db:
         database_version = db.execute("PRAGMA user_version").fetchone()[0]
         if database_version > SCHEMA_VERSION:
             raise RuntimeError(
-                f"La base usa el esquema {database_version}, pero esta versión "
-                f"solo admite hasta {SCHEMA_VERSION}; no se realizará downgrade"
+                f"The database uses schema {database_version}, but this version "
+                f"supports only up to {SCHEMA_VERSION}; no downgrade will be performed"
             )
         db.executescript(SCHEMA)
-        # La migración se serializa para que dos workers que arranquen a la vez
-        # no intenten añadir la misma columna. Los triggers mantienen también
-        # la restricción estricta en bases antiguas donde ALTER TABLE solo
-        # permite añadir una columna inicialmente nullable.
+        # Migration is serialized so two workers starting at the same time
+        # do not try to add the same column. Triggers also preserve
+        # the strict constraint on older databases where ALTER TABLE only
+        # allows adding an initially nullable column.
         db.execute("BEGIN IMMEDIATE")
         try:
             lock_columns = {
@@ -287,8 +287,8 @@ def create_app(config=None):
             }
             if "world_guid" in version_columns:
                 raise RuntimeError(
-                    "La base Palworld v1 no puede reutilizarse directamente; "
-                    "despliega Save Sync v2 con almacenamiento separado"
+                    "The Palworld v1 database cannot be reused directly; "
+                    "deploy Save Sync v2 with separate storage"
                 )
             if "save_identity" not in version_columns:
                 db.execute("ALTER TABLE versions ADD COLUMN save_identity TEXT")
@@ -340,8 +340,8 @@ def create_app(config=None):
         )
         if invalid_identity:
             raise RuntimeError(
-                "La base existente contiene una versión sin save_identity válido; "
-                "se rechaza el arranque para evitar mezclar partidas"
+                "The existing database contains a version without a valid save_identity; "
+                "startup is rejected to avoid mixing different saves"
             )
         for item in app.config["SAVE_SYNC_WEB_USERS"].split(","):
             username, role = item.strip().split(":", 1)
@@ -389,11 +389,11 @@ def create_app(config=None):
     backup_timeout = int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"])
 
     def cleanup_canonical_versions():
-        """Conserva las últimas N versiones por slot con filesystem best-effort.
+        """Keeps the latest N versions per slot with best-effort filesystem cleanup.
 
-        Un pending_backups no caduca por cleanup: es una cola durable y protege
-        su ZIP hasta que el supervisor externo registre éxito o fallo. La
-        retención de metadata se confirma antes de cualquier unlink físico.
+        A pending_backups row does not expire during cleanup: it is a durable queue and protects
+        its ZIP until the external supervisor records success or failure. The
+        metadata retention decision is committed before any physical unlink.
         """
         with transaction(immediate=True) as db:
             prune_canonical_versions_locked(
@@ -402,24 +402,24 @@ def create_app(config=None):
                 identity_for_username,
             )
 
-        # Segunda fase, después del COMMIT de metadata. Un nuevo BEGIN IMMEDIATE
-        # vuelve a validar todas las referencias antes de tocar el filesystem.
-        # Si esta fase falla, queda como máximo un ZIP huérfano recuperable.
+        # Second phase after the metadata COMMIT. A new BEGIN IMMEDIATE
+        # revalidates every reference before touching the filesystem.
+        # If this phase fails, at most one recoverable orphan ZIP remains.
         try:
             with transaction(immediate=True) as db:
                 reconcile_unreferenced_files_locked(db, storage, app.logger)
         except Exception:
             app.logger.exception(
-                "La retención de metadata quedó confirmada, pero falló la "
-                "reconciliación física; se reintentará en un cleanup posterior"
+                "Metadata retention was committed, but physical "
+                "reconciliation failed; a later cleanup will retry it"
             )
 
-    # Recupera limpiezas interrumpidas. Los backups pendientes no se purgan:
-    # pertenecen al supervisor durable y sobreviven a workers/reinicios.
+    # Recover interrupted cleanups. Pending backups are not purged:
+    # they belong to the durable supervisor and survive worker/process restarts.
     cleanup_canonical_versions()
 
     def terminate_process_group(process, sigterm_timeout=10, sigkill_timeout=10):
-        """Ruta inline usada por tests; producción delega en backup-supervisor."""
+        """Inline path used by tests; production delegates to backup-supervisor."""
         pgid = process.pid
         try:
             pgid = os.getpgid(process.pid)
@@ -441,15 +441,15 @@ def create_app(config=None):
             process.wait(timeout=sigkill_timeout)
         except subprocess.TimeoutExpired:
             app.logger.warning(
-                "El proceso de backup (pid %s) no terminó tras SIGKILL",
+                "The backup process (pid %s) did not exit after SIGKILL",
                 process.pid,
             )
 
     def arm_backup_marker(db, version):
-        """Encola durablemente la versión cuando el backup externo está activo.
+        """Durably queues the version when external backup is enabled.
 
-        La fila se crea dentro de la misma transacción que la publicación para
-        que retención nunca pueda retirar el ZIP antes de que el supervisor lo
+        The row is created in the same transaction as publication so
+        retention can never remove the ZIP before the supervisor
         procese.
         """
         if not str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip():
@@ -460,7 +460,7 @@ def create_app(config=None):
         )
 
     def release_backup_marker(version, success, exit_code=0, timed_out=False, reason=None):
-        """Soporte inline de tests; producción finaliza desde backup-supervisor."""
+        """Inline test support; production completion is handled by backup-supervisor."""
         details = {
             "version": version,
             "exitCode": exit_code,
@@ -482,12 +482,12 @@ def create_app(config=None):
                 )
         except Exception:
             app.logger.exception(
-                "No se pudo registrar el resultado del backup de la versión %s",
+                "Could not record the backup result for version %s",
                 version,
             )
 
     def await_backup_result(process, version):
-        """Soporte inline de tests; no se usa por workers de producción."""
+        """Inline test support; production workers do not use it."""
         exit_code = 0
         timed_out = False
         success = False
@@ -502,7 +502,7 @@ def create_app(config=None):
             except subprocess.TimeoutExpired:
                 exit_code = -1
                 app.logger.warning(
-                    "El backup externo de la versión %s no terminó tras SIGKILL",
+                    "External backup for version %s did not exit after SIGKILL",
                     version,
                 )
         finally:
@@ -511,22 +511,22 @@ def create_app(config=None):
                 cleanup_canonical_versions()
             except Exception:
                 app.logger.exception(
-                    "La limpieza post-backup falló; la versión %s se conserva",
+                    "Post-backup cleanup failed; version %s is preserved",
                     version,
                 )
             if not success or timed_out:
                 app.logger.warning(
-                    "El backup externo de la versión %s terminó con exit code %s%s",
+                    "External backup for version %s finished with exit code %s%s",
                     version,
                     exit_code,
                     " (timeout)" if timed_out else "",
                 )
 
     def run_post_publish_hook(version, relative_path, save_identity):
-        """Ejecutor inline exclusivo de TESTING.
+        """Inline executor used only in TESTING.
 
-        En producción el worker únicamente deja pending_backups y el sidecar
-        save_sync.backup_supervisor ejecuta y supervisa el comando.
+        In production the worker only creates pending_backups and the sidecar
+        save_sync.backup_supervisor executes and supervises the command.
         """
         command = str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip()
         if not command:
@@ -555,7 +555,7 @@ def create_app(config=None):
             )
         except Exception:
             app.logger.exception(
-                "Falló el hook post-publicación de test para la versión %s",
+                "The test post-publication hook failed for version %s",
                 version,
             )
             release_backup_marker(version, False, reason="hook_launch_failed")
@@ -563,7 +563,7 @@ def create_app(config=None):
                 cleanup_canonical_versions()
             except Exception:
                 app.logger.exception(
-                    "La limpieza post-fallo-del-hook falló; la versión %s se conserva",
+                    "Cleanup after hook failure failed; version %s is preserved",
                     version,
                 )
             return
@@ -576,7 +576,7 @@ def create_app(config=None):
             ).start()
         except Exception:
             app.logger.exception(
-                "No se pudo iniciar el supervisor inline de test para la versión %s",
+                "Could not start the inline test supervisor for version %s",
                 version,
             )
             terminate_process_group(process)
@@ -585,7 +585,7 @@ def create_app(config=None):
                 cleanup_canonical_versions()
             except Exception:
                 app.logger.exception(
-                    "La limpieza post-fallo-del-supervisor falló; la versión %s se conserva",
+                    "Cleanup after supervisor failure failed; version %s is preserved",
                     version,
                 )
 
@@ -641,7 +641,7 @@ def create_app(config=None):
 
     def authenticate(require_admin=False):
         if app.config["SAVE_SYNC_REQUIRE_HTTPS"] and not request.is_secure:
-            return None, error("https_required", "La API requiere HTTPS.", 403)
+            return None, error("https_required", "The API requires HTTPS.", 403)
         db = connect()
         try:
             web_api_prefix = f"/games/{game_key}/api"
@@ -666,7 +666,7 @@ def create_app(config=None):
                 if web_failure == "web_user_not_allowed":
                     return None, error(
                         "web_user_not_allowed",
-                        f"El usuario autenticado no está autorizado para {display_game}.",
+                        f"The authenticated user is not authorized for {display_game}.",
                         403,
                     )
                 if user and request.method not in {"GET", "HEAD", "OPTIONS"}:
@@ -674,15 +674,15 @@ def create_app(config=None):
                     supplied = request.headers.get("X-CSRF-Token", "")
                     if not expected or not hmac.compare_digest(expected, supplied):
                         return None, error(
-                            "csrf_failed", "Token CSRF ausente o no válido.", 403
+                            "csrf_failed", "CSRF token missing or invalid.", 403
                         )
             if not user:
                 return None, error(
-                    "authentication_required", "Se requiere autenticación válida.", 401
+                    "authentication_required", "Valid authentication is required.", 401
                 )
             if require_admin and user["role"] != "admin":
                 return None, error(
-                    "forbidden", "Se requieren permisos administrativos.", 403
+                    "forbidden", "Administrative permissions are required.", 403
                 )
             limit = int(app.config["SAVE_SYNC_RATE_LIMIT_PER_MINUTE"])
             window = int(time.time() // 60)
@@ -698,7 +698,7 @@ def create_app(config=None):
                 (identity, window),
             ).fetchone()[0]
             if count > limit:
-                return None, error("rate_limit_exceeded", "Demasiadas peticiones.", 429)
+                return None, error("rate_limit_exceeded", "Too many requests.", 429)
             return user, None
         finally:
             db.close()
@@ -723,7 +723,7 @@ def create_app(config=None):
         ).fetchone()
 
     def backup_status_snapshot(db):
-        """Resume el estado observable del hook sin asumir que restic está sano."""
+        """Summarizes observable hook state without assuming restic is healthy."""
         current = current_version(db)
         latest_version = current["version"] if current else 0
         pending_rows = db.execute(
@@ -893,7 +893,7 @@ def create_app(config=None):
     def too_large(_exc):
         return error(
             "upload_too_large",
-            "El archivo supera el límite configurado.",
+            "The file exceeds the configured limit.",
             413,
             {"maxBytes": int(app.config["SAVE_SYNC_MAX_UPLOAD_SIZE"])},
         )
@@ -905,17 +905,17 @@ def create_app(config=None):
         ) or (legacy_palworld and request.path.startswith(("/api/palworld", "/palworld/api"))):
             return error(
                 "internal_error",
-                "Error interno; no se ha publicado ninguna versión.",
+                "Internal error; no version was published.",
                 500,
             )
-        return Response("Error interno", 500, content_type="text/plain; charset=utf-8")
+        return Response("Internal error", 500, content_type="text/plain; charset=utf-8")
 
     @app.errorhandler(404)
     def not_found(_exc):
         if request.path.startswith(
             (f"/api/games/{game_key}", f"/games/{game_key}/api")
         ) or (legacy_palworld and request.path.startswith(("/api/palworld", "/palworld/api"))):
-            return error("not_found", "Recurso no encontrado.", 404)
+            return error("not_found", "Resource not found.", 404)
         return _exc
 
     @app.after_request
@@ -934,7 +934,7 @@ def create_app(config=None):
                 db.execute("SELECT 1").fetchone()
             return jsonify(ok=True)
         except sqlite3.Error:
-            return error("storage_unavailable", "Base de datos no disponible.", 503)
+            return error("storage_unavailable", "Database unavailable.", 503)
 
     def routes(rule, **options):
         def deco(fn):
@@ -988,9 +988,9 @@ def create_app(config=None):
         "world_guid_conflict" if legacy_palworld else "save_identity_conflict"
     )
     identity_conflict_message = (
-        "El ZIP pertenece a un mundo de Palworld diferente."
+        "The ZIP belongs to a different Palworld world."
         if legacy_palworld
-        else f"El ZIP pertenece a otra partida de {display_game}."
+        else f"The ZIP belongs to a different save for {display_game}."
     )
 
     def add_download_headers(response, version):
@@ -1047,12 +1047,12 @@ def create_app(config=None):
         owner = str(data.get("owner", "")).strip()
         client_id = str(data.get("clientId", "")).strip()
         if not owner or not client_id or len(owner) > 100 or len(client_id) > 200:
-            return error("invalid_request", "owner y clientId son obligatorios.", 400)
+            return error("invalid_request", "owner and clientId are required.", 400)
         canonical_owner = display_name(g.save_sync_user)
         if owner.casefold() != canonical_owner.casefold():
             return error(
                 "owner_mismatch",
-                "owner no coincide con el usuario autenticado.",
+                "owner does not match the authenticated user.",
                 403,
                 {"expectedOwner": canonical_owner},
             )
@@ -1073,7 +1073,7 @@ def create_app(config=None):
                 )
                 return error(
                     "lock_occupied",
-                    "La partida está siendo utilizada.",
+                    "The save is currently in use.",
                     409,
                     {
                         "owner": existing["owner_label"],
@@ -1114,7 +1114,7 @@ def create_app(config=None):
         data = request.get_json(silent=True) or {}
         sid = str(data.get("sessionId", ""))
         if not sid:
-            return error("invalid_request", "sessionId es obligatorio.", 400)
+            return error("invalid_request", "sessionId is required.", 400)
         now = utcnow()
         with transaction(immediate=True) as db:
             raw = db.execute("SELECT * FROM active_lock WHERE singleton=1").fetchone()
@@ -1125,7 +1125,7 @@ def create_app(config=None):
             ):
                 db.execute("DELETE FROM active_lock WHERE singleton=1")
                 audit(db, event, g.save_sync_user, False, reason="lock_expired")
-                return error("lock_expired", "El bloqueo ha caducado.", 409)
+                return error("lock_expired", "The lock has expired.", 409)
             row = active_lock(db)
             same_token = row and (
                 row["token_id"] is None
@@ -1143,7 +1143,7 @@ def create_app(config=None):
                 audit(db, event, g.save_sync_user, False, reason="invalid_session")
                 return error(
                     "invalid_session",
-                    "La sesión no existe, ha caducado o no pertenece al usuario.",
+                    "The session does not exist, has expired or does not belong to the user.",
                     409,
                 )
             if delete:
@@ -1177,13 +1177,13 @@ def create_app(config=None):
             row = current_version(db)
             if not row:
                 return error(
-                    "save_not_initialized", "Todavía no existe una partida remota.", 404
+                    "save_not_initialized", "There is no remote save yet.", 404
                 )
             path = storage / row["path"]
             audit(db, "download", g.save_sync_user, True, version=row["version"])
         if not path.is_file():
             return error(
-                "storage_unavailable", "La versión registrada no está disponible.", 503
+                "storage_unavailable", "The recorded version is not available.", 503
             )
         response = send_file(
             path,
@@ -1214,7 +1214,7 @@ def create_app(config=None):
         if not upload_file or not sid or base < 0 or len(claimed_hash) != 64:
             return error(
                 "invalid_request",
-                f"file, sessionId, baseVersion, sha256 y {identity_field} son obligatorios.",
+                f"file, sessionId, baseVersion, sha256 and {identity_field} are required.",
                 400,
             )
         if not save_identity:
@@ -1226,7 +1226,7 @@ def create_app(config=None):
                 details["receivedWorldGuid"] = received_save_identity[:128]
             return error(
                 "invalid_save_identity",
-                f"{identity_field} no cumple el formato configurado.",
+                f"{identity_field} does not match the configured format.",
                 400,
                 details,
             )
@@ -1260,7 +1260,7 @@ def create_app(config=None):
                         audit_upload_failure("upload_too_large")
                         return error(
                             "upload_too_large",
-                            "El archivo supera el límite configurado.",
+                            "The file exceeds the configured limit.",
                             413,
                         )
                     hasher.update(chunk)
@@ -1272,7 +1272,7 @@ def create_app(config=None):
                 audit_upload_failure("sha256_mismatch")
                 return error(
                     "sha256_mismatch",
-                    "El SHA-256 no coincide.",
+                    "The SHA-256 digest does not match.",
                     422,
                     {"calculatedSha256": actual},
                 )
@@ -1281,7 +1281,7 @@ def create_app(config=None):
             except ValueError as exc:
                 audit_upload_failure(str(exc))
                 return error(
-                    str(exc), "El ZIP no supera las validaciones de seguridad.", 422
+                    str(exc), "The ZIP failed the security validations.", 422
                 )
             with transaction(immediate=True) as db:
                 audit(
@@ -1328,7 +1328,7 @@ def create_app(config=None):
                     )
                     return error(
                         "version_conflict",
-                        "La versión remota ha cambiado.",
+                        "The remote version has changed.",
                         409,
                         {"expectedBaseVersion": expected, "receivedBaseVersion": base},
                     )
@@ -1355,7 +1355,7 @@ def create_app(config=None):
                     )
                     return error(
                         "invalid_session",
-                        "La sesión no existe, ha caducado o no pertenece al usuario.",
+                        "The session does not exist, has expired or does not belong to the user.",
                         409,
                     )
                 if lock["base_version"] != expected:
@@ -1371,7 +1371,7 @@ def create_app(config=None):
                     )
                     return error(
                         "version_conflict",
-                        "La versión remota ha cambiado.",
+                        "The remote version has changed.",
                         409,
                         {"expectedBaseVersion": expected, "receivedBaseVersion": base},
                     )
@@ -1405,8 +1405,8 @@ def create_app(config=None):
                     "INSERT INTO current_save(singleton,version) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET version=excluded.version",
                     (new_version,),
                 )
-                # La cola de backup nace ATÓMICAMENTE con la publicación. En
-                # producción la consumirá el sidecar independiente de Gunicorn.
+                # The backup queue is created ATOMICALLY with publication. In
+                # production it is consumed by the sidecar independent from Gunicorn.
                 arm_backup_marker(db, new_version)
                 db.execute("DELETE FROM active_lock WHERE singleton=1")
                 audit(
@@ -1426,10 +1426,10 @@ def create_app(config=None):
                 cleanup_canonical_versions()
             except Exception:
                 app.logger.exception(
-                    "La limpieza post-publicación falló; la versión confirmada se conserva"
+                    "Post-publication cleanup failed; the confirmed version is preserved"
                 )
-            # Los tests unitarios conservan el ejecutor inline para cubrir
-            # timeout/process-group; producción jamás liga el backup al worker.
+            # Unit tests keep the inline executor to cover
+            # timeout/process-group; production never ties backup lifetime to the worker.
             if app.config.get("TESTING"):
                 run_post_publish_hook(new_version, relative, save_identity)
             result = {
@@ -1480,12 +1480,12 @@ def create_app(config=None):
                 "SELECT * FROM versions WHERE version=?", (version,)
             ).fetchone()
             if not row:
-                return error("version_not_found", "Versión no encontrada.", 404)
+                return error("version_not_found", "Version not found.", 404)
             audit(db, "backup_download", g.save_sync_user, True, version=version)
         path = storage / row["path"]
         if not path.is_file():
             return error(
-                "storage_unavailable", "La versión registrada no está disponible.", 503
+                "storage_unavailable", "The recorded version is not available.", 503
             )
         response = send_file(
             path,
@@ -1509,7 +1509,7 @@ def create_app(config=None):
                 if lock:
                     return error(
                         "lock_occupied",
-                        "No se puede restaurar durante una sesión activa.",
+                        "Restore is not allowed during an active session.",
                         409,
                         {"owner": lock["owner_label"], "expiresAt": lock["expires_at"]},
                     )
@@ -1518,7 +1518,7 @@ def create_app(config=None):
                 ).fetchone()
                 source = dict(source_row) if source_row else None
                 if not source:
-                    return error("version_not_found", "Versión no encontrada.", 404)
+                    return error("version_not_found", "Version not found.", 404)
                 initial_current = current_version(db)
                 initial_current_version = (
                     initial_current["version"] if initial_current else 0
@@ -1550,7 +1550,7 @@ def create_app(config=None):
             if not source_path.is_file():
                 return error(
                     "backup_integrity_failed",
-                    "El backup no está disponible o no supera integridad.",
+                    "The backup is unavailable or failed integrity checks.",
                     503,
                 )
             temp = storage / "temporary" / f"restore-{secrets.token_hex(12)}.zip"
@@ -1564,7 +1564,7 @@ def create_app(config=None):
             if source_hash.hexdigest() != source["sha256"]:
                 return error(
                     "backup_integrity_failed",
-                    "El backup no está disponible o no supera integridad.",
+                    "The backup is unavailable or failed integrity checks.",
                     503,
                 )
 
@@ -1573,7 +1573,7 @@ def create_app(config=None):
                 if lock:
                     return error(
                         "lock_occupied",
-                        "Se inició una sesión mientras se preparaba la restauración.",
+                        "A session started while restore was being prepared.",
                         409,
                         {"owner": lock["owner_label"], "expiresAt": lock["expires_at"]},
                     )
@@ -1628,7 +1628,7 @@ def create_app(config=None):
                     )
                     return error(
                         "version_conflict",
-                        "El estado remoto cambió mientras se preparaba la restauración.",
+                        "Remote state changed while restore was being prepared.",
                         409,
                         {
                             "expectedBaseVersion": current_number,
@@ -1687,7 +1687,7 @@ def create_app(config=None):
             cleanup_canonical_versions()
         except Exception:
             app.logger.exception(
-                "La limpieza posterior a restauración falló; la versión confirmada se conserva"
+                "Post-restore cleanup failed; the confirmed version is preserved"
             )
         if app.config.get("TESTING"):
             run_post_publish_hook(new_version, relative, source["save_identity"])
@@ -1712,11 +1712,11 @@ def create_app(config=None):
                 "SELECT * FROM versions WHERE version=?", (version,)
             ).fetchone()
             if not row:
-                return error("version_not_found", "Versión no encontrada.", 404)
+                return error("version_not_found", "Version not found.", 404)
             if version == current["version"]:
                 return error(
                     "version_current",
-                    "La versión actual no puede eliminarse.",
+                    "The current version cannot be deleted.",
                     409,
                 )
             pending = db.execute(
@@ -1725,7 +1725,7 @@ def create_app(config=None):
             if pending:
                 return error(
                     "backup_in_progress",
-                    "La versión tiene un backup externo en curso.",
+                    "The version has an external backup in progress.",
                     409,
                     {"version": version},
                 )
@@ -1741,7 +1741,7 @@ def create_app(config=None):
         reason = str(data.get("reason", "")).strip()
         if len(reason) < 5 or len(reason) > 500:
             return error(
-                "invalid_request", "reason es obligatorio (5-500 caracteres).", 400
+                "invalid_request", "reason is required (5-500 characters).", 400
             )
         with transaction(immediate=True) as db:
             row = active_lock(db)
@@ -1770,14 +1770,14 @@ def create_app(config=None):
         username = str(data.get("username", ""))
         name = str(data.get("name", "")).strip()
         if not username or not name:
-            return error("invalid_request", "username y name son obligatorios.", 400)
+            return error("invalid_request", "username and name are required.", 400)
         token = "pws_" + secrets.token_urlsafe(36)
         with transaction(immediate=True) as db:
             user = db.execute(
                 "SELECT * FROM users WHERE username=? AND active=1", (username,)
             ).fetchone()
             if not user:
-                return error("user_not_found", "Usuario no encontrado.", 404)
+                return error("user_not_found", "User not found.", 404)
             cursor = db.execute(
                 "INSERT INTO api_tokens(user_id,name,token_hash,created_at) VALUES(?,?,?,?)",
                 (user["id"], name, digest(token), iso(utcnow())),
@@ -1803,7 +1803,7 @@ def create_app(config=None):
                 (iso(utcnow()), token_id),
             ).rowcount
             if not changed:
-                return error("token_not_found", "Token activo no encontrado.", 404)
+                return error("token_not_found", "Active token not found.", 404)
             audit(db, "token_revoked", g.save_sync_user, True, tokenId=token_id)
         return jsonify(ok=True)
 
@@ -1835,13 +1835,13 @@ def create_app(config=None):
             db.close()
         if web_failure == "web_user_not_allowed":
             return Response(
-                f"Usuario no autorizado para {display_game}",
+                f"User not authorized for {display_game}",
                 403,
                 content_type="text/plain; charset=utf-8",
             )
         if not user:
             return Response(
-                "Autenticación requerida",
+                "Authentication required",
                 401,
                 content_type="text/plain; charset=utf-8",
             )
@@ -1872,9 +1872,9 @@ def create_app(config=None):
     return app
 
 
-PANEL_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>__GAME__ · Save Sync</title><style>
+PANEL_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>__GAME__ · Save Sync</title><style>
 :root{color-scheme:dark;font-family:system-ui;background:#10141b;color:#eef2f8}body{max-width:980px;margin:3rem auto;padding:0 1rem}header,.card{background:#19212d;border:1px solid #344154;border-radius:14px;padding:1.2rem;margin:1rem 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.8rem}.label{color:#9eabc0;font-size:.85rem}.value{font-size:1.1rem;overflow-wrap:anywhere}button,a.button{background:#5b7cfa;color:white;border:0;border-radius:8px;padding:.7rem 1rem;text-decoration:none;cursor:pointer}.busy,.backup-pending,.backup-warning{color:#ffbf69}.free,.backup-completed{color:#72dfa1}.backup-failed,.backup-unknown{color:#ff7b86}.backup-disabled,.backup-not_initialized{color:#9eabc0}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.55rem;border-bottom:1px solid #344154}code{font-size:.78rem}</style></head><body>
-<header><h1>Sincronización __GAME__</h1><div>Usuario: __USER__ · Rol: __ROLE__</div></header><section class="card"><h2 id="state">Cargando…</h2><div class="grid" id="facts"></div><p id="lock"></p><a class="button" href="__WEB_API_PREFIX__/download">Descargar última versión</a> <button id="force" hidden>Forzar desbloqueo</button></section><section class="card"><h2>Backup externo</h2><div class="grid" id="backupFacts"></div><p id="backupConfig">Cargando…</p><p id="backupState">Cargando…</p></section><section class="card"><h2>Historial</h2><table><thead><tr><th>Versión</th><th>__IDENTITY_LABEL__</th><th>Usuario</th><th>Fecha</th><th>Tamaño</th><th>SHA-256</th><th>Acciones</th></tr></thead><tbody id="history"></tbody></table></section><section class="card" id="tokensCard" hidden><h2>Tokens API</h2><p>El token nuevo se muestra una sola vez.</p><input id="tokenUser" placeholder="Usuario autorizado"><input id="tokenName" placeholder="Nombre del ordenador"><button id="createToken">Crear token</button><pre id="newToken"></pre><div id="tokens"></div></section>
+<header><h1>__GAME__ synchronization</h1><div>User: __USER__ · Role: __ROLE__</div></header><section class="card"><h2 id="state">Loading…</h2><div class="grid" id="facts"></div><p id="lock"></p><a class="button" href="__WEB_API_PREFIX__/download">Download latest version</a> <button id="force" hidden>Force unlock</button></section><section class="card"><h2>External backup</h2><div class="grid" id="backupFacts"></div><p id="backupConfig">Loading…</p><p id="backupState">Loading…</p></section><section class="card"><h2>History</h2><table><thead><tr><th>Version</th><th>__IDENTITY_LABEL__</th><th>User</th><th>Date</th><th>Size</th><th>SHA-256</th><th>Actions</th></tr></thead><tbody id="history"></tbody></table></section><section class="card" id="tokensCard" hidden><h2>Tokens API</h2><p>The new token is shown only once.</p><input id="tokenUser" placeholder="Authorized user"><input id="tokenName" placeholder="Computer name"><button id="createToken">Create token</button><pre id="newToken"></pre><div id="tokens"></div></section>
 <script>
 const csrf='__CSRF__',role='__ROLE__';
 const headers={'X-CSRF-Token':csrf,'Content-Type':'application/json'};
@@ -1884,27 +1884,27 @@ async function mutate(url,method='POST',body={}){const r=await fetch(url,{method
 async function load(){
  const backup=fetch('__WEB_API_PREFIX__/backup-status').then(async r=>r.ok?await r.json():null).catch(()=>null);
  const [s,h,b]=await Promise.all([fetch('__WEB_API_PREFIX__/status').then(r=>r.json()),fetch('__WEB_API_PREFIX__/history').then(r=>r.json()),backup]);
- document.querySelector('#state').textContent=s.locked?'Estado: en uso':'Estado: disponible';document.querySelector('#state').className=s.locked?'busy':'free';
- document.querySelector('#facts').innerHTML=[['Versión',s.version],['__IDENTITY_LABEL__',s.saveIdentity||'—'],['Última actualización',s.updatedAt||'Sin inicializar'],['Último jugador',s.updatedBy||'—'],['Tamaño',s.size+' bytes'],['SHA-256',s.sha256||'—']].map(x=>`<div><div class=label>${esc(x[0])}</div><div class=value>${esc(x[1])}</div></div>`).join('');
- document.querySelector('#lock').textContent=s.locked?`Servidor en uso por ${s.lock.owner}. Última señal: ${s.lock.lastHeartbeatAt}. Caduca: ${s.lock.expiresAt}.`:'';
+ document.querySelector('#state').textContent=s.locked?'Status: in use':'Status: available';document.querySelector('#state').className=s.locked?'busy':'free';
+ document.querySelector('#facts').innerHTML=[['Version',s.version],['__IDENTITY_LABEL__',s.saveIdentity||'—'],['Last update',s.updatedAt||'Not initialized'],['Last player',s.updatedBy||'—'],['Size',s.size+' bytes'],['SHA-256',s.sha256||'—']].map(x=>`<div><div class=label>${esc(x[0])}</div><div class=value>${esc(x[1])}</div></div>`).join('');
+ document.querySelector('#lock').textContent=s.locked?`Server in use by ${s.lock.owner}. Last heartbeat: ${s.lock.lastHeartbeatAt}. Expires: ${s.lock.expiresAt}.`:'';
  if(b){
-  const labels={completed:'Completado',pending:'Pendiente',failed:'Fallido',unknown:'Sin resultado',disabled:'Desactivado',not_initialized:'Sin partida'};
-  const stateLabel=b.stalePending&&b.state==='unknown'?'Sin resultado (marcador vencido)':labels[b.state]||b.state;
-  document.querySelector('#backupConfig').textContent=`Backup automático: ${b.enabled?'activado':'desactivado ⚠'}`;document.querySelector('#backupConfig').className=b.enabled?'backup-completed':'backup-warning';
-  document.querySelector('#backupState').textContent=`Estado de la versión actual: ${stateLabel}`;document.querySelector('#backupState').className=`backup-${b.state}`;
+  const labels={completed:'Completed',pending:'Pending',failed:'Failed',unknown:'No result',disabled:'Disabled',not_initialized:'No save'};
+  const stateLabel=b.stalePending&&b.state==='unknown'?'No result (stale marker)':labels[b.state]||b.state;
+  document.querySelector('#backupConfig').textContent=`Automatic backup: ${b.enabled?'enabled':'disabled ⚠'}`;document.querySelector('#backupConfig').className=b.enabled?'backup-completed':'backup-warning';
+  document.querySelector('#backupState').textContent=`Current version backup state: ${stateLabel}`;document.querySelector('#backupState').className=`backup-${b.state}`;
   const pendingVersions=Array.isArray(b.pendingVersions)?b.pendingVersions:[];
   const staleVersions=Array.isArray(b.stalePendingVersions)?b.stalePendingVersions:[];
-  document.querySelector('#backupFacts').innerHTML=[['Última versión publicada',b.latestPublishedVersion||'—'],['Última versión respaldada',b.lastCompleted?.version||'—'],['Último backup completado',b.lastCompleted?.completedAt||'—'],['Último exitCode',b.lastAttempt?.exitCode??'—'],['Pendientes',pendingVersions.map(x=>x.version).join(', ')||'Ninguno'],['Marcadores vencidos',staleVersions.map(x=>x.version).join(', ')||'Ninguno'],['Versión actual respaldada',b.latestVersionBackedUp?'Sí':'No']].map(x=>`<div><div class=label>${esc(x[0])}</div><div class=value>${esc(x[1])}</div></div>`).join('');
+  document.querySelector('#backupFacts').innerHTML=[['Latest published version',b.latestPublishedVersion||'—'],['Latest backed-up version',b.lastCompleted?.version||'—'],['Latest completed backup',b.lastCompleted?.completedAt||'—'],['Latest exitCode',b.lastAttempt?.exitCode??'—'],['Pending',pendingVersions.map(x=>x.version).join(', ')||'None'],['Stale markers',staleVersions.map(x=>x.version).join(', ')||'None'],['Current version backed up',b.latestVersionBackedUp?'Yes':'No']].map(x=>`<div><div class=label>${esc(x[0])}</div><div class=value>${esc(x[1])}</div></div>`).join('');
  }else{
-  document.querySelector('#backupConfig').textContent='Backup automático: no disponible';document.querySelector('#backupConfig').className='backup-unknown';
-  document.querySelector('#backupState').textContent='Estado de la versión actual: no disponible';document.querySelector('#backupState').className='backup-unknown';document.querySelector('#backupFacts').innerHTML='';
+  document.querySelector('#backupConfig').textContent='Automatic backup: unavailable';document.querySelector('#backupConfig').className='backup-unknown';
+  document.querySelector('#backupState').textContent='Current version backup state: unavailable';document.querySelector('#backupState').className='backup-unknown';document.querySelector('#backupFacts').innerHTML='';
  }
- document.querySelector('#history').innerHTML=h.versions.map(v=>{const id=safeInt(v.version);return `<tr><td>${id}</td><td><code>${esc(v.saveIdentity)}</code></td><td>${esc(v.updatedBy)}</td><td>${esc(v.updatedAt)}</td><td>${esc(v.size)}</td><td><code>${esc(v.sha256)}</code></td><td>${role==='admin'?`<a href=__WEB_API_PREFIX__/history/${id}/download>Descargar</a> <button onclick=restoreV(${id})>Restaurar</button>`:''}</td></tr>`}).join('');
+ document.querySelector('#history').innerHTML=h.versions.map(v=>{const id=safeInt(v.version);return `<tr><td>${id}</td><td><code>${esc(v.saveIdentity)}</code></td><td>${esc(v.updatedBy)}</td><td>${esc(v.updatedAt)}</td><td>${esc(v.size)}</td><td><code>${esc(v.sha256)}</code></td><td>${role==='admin'?`<a href=__WEB_API_PREFIX__/history/${id}/download>Download</a> <button onclick=restoreV(${id})>Restore</button>`:''}</td></tr>`}).join('');
  document.querySelector('#force').hidden=role!=='admin'||!s.locked;if(role==='admin')loadTokens()
 }
-async function restoreV(v){if(confirm(`¿Restaurar v${v} como nueva versión?`)){await mutate(`__WEB_API_PREFIX__/history/${v}/restore`);load()}}
-document.querySelector('#force').onclick=async()=>{const reason=prompt('Motivo del desbloqueo forzado:');if(reason){await mutate('__WEB_API_PREFIX__/admin/force-unlock','POST',{reason});load()}};
-async function loadTokens(){document.querySelector('#tokensCard').hidden=false;const j=await fetch('__WEB_API_PREFIX__/admin/tokens').then(r=>r.json());document.querySelector('#tokens').innerHTML=j.tokens.map(t=>{const id=safeInt(t.id);return `<p>#${id} ${esc(t.username)} · ${esc(t.name)} · ${t.revoked_at?'revocado':`<button onclick=revokeT(${id})>Revocar</button>`}</p>`}).join('')}
+async function restoreV(v){if(confirm(`Restore v${v} as a new version?`)){await mutate(`__WEB_API_PREFIX__/history/${v}/restore`);load()}}
+document.querySelector('#force').onclick=async()=>{const reason=prompt('Reason for force unlock:');if(reason){await mutate('__WEB_API_PREFIX__/admin/force-unlock','POST',{reason});load()}};
+async function loadTokens(){document.querySelector('#tokensCard').hidden=false;const j=await fetch('__WEB_API_PREFIX__/admin/tokens').then(r=>r.json());document.querySelector('#tokens').innerHTML=j.tokens.map(t=>{const id=safeInt(t.id);return `<p>#${id} ${esc(t.username)} · ${esc(t.name)} · ${t.revoked_at?'revoked':`<button onclick=revokeT(${id})>Revoke</button>`}</p>`}).join('')}
 async function revokeT(id){await mutate(`__WEB_API_PREFIX__/admin/tokens/${id}`,'DELETE');loadTokens()}
 document.querySelector('#createToken').onclick=async()=>{const [r,j]=await mutate('__WEB_API_PREFIX__/admin/tokens','POST',{username:tokenUser.value,name:tokenName.value});if(r.ok){newToken.textContent=j.token;loadTokens()}};
 load();setInterval(load,30000)

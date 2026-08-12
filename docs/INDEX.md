@@ -1,33 +1,29 @@
-# Índice de documentación
+# Documentation index
 
-## Empezar
+## Start here
 
-- [README principal](../README.md): problema, garantías, instalación y alcance.
-- [English README](../README.en.md): public overview in English.
-- [Web pública ES](https://ayerdi.github.io/dedicated-server-save-sync/).
-- [Public website EN](https://ayerdi.github.io/dedicated-server-save-sync/en/).
-- [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki): guía rápida orientada a usuarios.
-- [Desarrollo local](LOCAL-DEVELOPMENT.md): backend aislado en localhost y E2E.
-- [Despliegue y operación](OPERATIONS.md): producción, backup y rollback.
+- [README](../README.md) — problem, guarantees, installation and project scope.
+- [Project website](https://ayerdi.github.io/dedicated-server-save-sync/) — short visual overview.
+- [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki) — user guides in **English and Spanish**.
+- [Local development](LOCAL-DEVELOPMENT.md) — isolated localhost stack and E2E.
+- [Operations](OPERATIONS.md) — production deployment, backups and rollback.
 
-## Contratos y diseño
+## Contracts and design
 
-- [Contrato HTTP](API.md): endpoints, errores y ejemplos `curl`.
-- [Arquitectura](ARCHITECTURE.md): autoridades, transacciones e invariantes.
-- [Migraciones](MIGRATIONS.md): versión de esquema, backup y compatibilidad.
-- [Referencia del diseño multi-juego](ADAPTING-OTHER-GAMES.md): abstracciones y
-  requisitos técnicos conservados como documentación, no como roadmap activo.
-- [Aceptación real de Palworld](../client/MANUAL-ACCEPTANCE.md): procedimiento
-  de regresión manual en dos equipos.
+- [HTTP API](API.md) — endpoints, errors and curl examples.
+- [Architecture and invariants](ARCHITECTURE.md) — authority, transactions, locks and crash safety.
+- [Migrations](MIGRATIONS.md) — schema versioning, backups and rollback.
+- [Multi-game design reference](ADAPTING-OTHER-GAMES.md) — generic abstractions kept for future work, not an active support promise.
+- [Real Palworld acceptance test](../client/MANUAL-ACCEPTANCE.md) — controlled two-host regression procedure.
 
-## Mantenimiento y publicación
+## Maintenance and releases
 
-- [Releases](RELEASES.md): artefactos reproducibles, checksum y proceso futuro.
-- [Notas v2.2.1](RELEASE-NOTES-v2.2.1.md): release estable de referencia y hardening final.
-- [Notas v2.2.0](RELEASE-NOTES-v2.2.0.md): release anterior y preparación pública inicial.
-- [Checklist de publicación](PUBLICATION.md): seguridad y cambio de visibilidad.
-- [Guía para agentes/contribuidores](AGENT-HANDOFF.md): orden de lectura,
-  invariantes y alcance de mantenimiento.
-- [Seguridad](../SECURITY.md): datos prohibidos y reporte privado.
-- [Contribuir](../CONTRIBUTING.md): alcance de mantenimiento y pruebas.
-- [Soporte](../SUPPORT.md): dónde pedir ayuda sin filtrar datos.
+- [Release process](RELEASES.md) — deterministic artifacts and publication rules.
+- [v2.2.2 release notes](RELEASE-NOTES-v2.2.2.md) — English-first public structure and compatibility aliases.
+- [v2.2.1 release notes](RELEASE-NOTES-v2.2.1.md) — durable backup supervisor and crash-safety hardening.
+- [v2.2.0 release notes](RELEASE-NOTES-v2.2.0.md) — backup observability and initial public preparation.
+- [Publication checklist](PUBLICATION.md) — current public-repository state and verification steps.
+- [Maintainer guide](AGENT-HANDOFF.md) — reading order, invariants and maintenance scope.
+- [Security](../SECURITY.md)
+- [Contributing](../CONTRIBUTING.md)
+- [Support](../SUPPORT.md)

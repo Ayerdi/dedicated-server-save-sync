@@ -1,51 +1,32 @@
-# Adaptar el patrón a otros juegos
+# Adapting the pattern to other games
 
-> **Referencia técnica, no soporte estable.** `v2.2.1` se publica y mantiene
-> como implementación de referencia para Palworld. Este documento conserva el
-> diseño genérico existente y los requisitos que una adaptación debería cumplir;
-> no implica que este repositorio acepte nuevos juegos en su roadmap de
-> mantenimiento. La futura plataforma multi-juego se desarrollará por separado.
+> **Technical reference, not stable support.** `v2.2.2` is published and maintained as the Palworld reference implementation. This document preserves the generic design decisions and requirements another adapter would need to satisfy. The future multi-game/device-sync product will be developed separately.
 
-## Qué puede reutilizarse
+## Reusable primitives
 
-El backend aporta primitivas independientes del juego:
+The backend provides game-independent building blocks: tokens/roles, exclusive lock with TTL/heartbeat, monotonic versioning and `baseVersion`, hashing and atomic publication, history/restore/audit, observable backup state and adapter-defined `saveIdentity`.
 
-- tokens y roles;
-- lock exclusivo con TTL;
-- contador de versión y `baseVersion`;
-- almacenamiento temporal, hash y publicación atómica;
-- historial, restauración y auditoría;
-- panel de estado.
+Canonical routes live under `/api/games/{gameKey}`. Palworld keeps `worldGuid` and legacy route aliases only for compatibility with its adapter.
 
-Las rutas HTTP canónicas son `/api/games/{gameKey}` y el contrato común usa
-`saveIdentity`. Palworld conserva `worldGuid` y rutas antiguas únicamente como
-compatibilidad de su adaptador.
+The current architecture isolates each game in its own deployment, database and volume. That isolation is useful, but it does **not** make other games officially supported.
 
-La arquitectura actual aísla cada juego en su propia instancia y volumen. Esa
-capacidad forma parte del diseño heredado, pero no convierte otros títulos en
-integraciones soportadas.
+## Research required before writing an adapter
 
-## Investigación obligatoria
+Answer with evidence:
 
-Antes de escribir un cliente para otro juego, responder con evidencia:
+1. Which process owns or writes the save?
+2. Is there a supported command/API for a clean save and shutdown?
+3. When can the directory be copied without producing inconsistent state?
+4. What stable identifier distinguishes campaigns, worlds or slots?
+5. Can that identifier be read before and after startup?
+6. Which files form one consistent save unit?
+7. Which backups, temporary files, locks or caches must be excluded?
+8. What save size and compression ratio are realistic?
+9. How can a restore be validated in an isolated environment?
 
-1. ¿Qué proceso posee o escribe el save?
-2. ¿Existe comando/API para guardar y apagar limpiamente?
-3. ¿Cuándo puede copiarse el directorio sin producir un estado inconsistente?
-4. ¿Qué identificador estable distingue campañas, mundos o ranuras?
-5. ¿Ese identificador puede obtenerse antes y después de arrancar?
-6. ¿Qué archivos forman una unidad consistente?
-7. ¿Hay backups internos, temporales, locks o cachés que deban excluirse?
-8. ¿Qué tamaño y ratio de compresión son razonables?
-9. ¿Cómo se valida una restauración en un entorno aislado?
+If the game has no native identity, a configured identity fixed on first upload is possible but weaker: the client must still prove that the selected local files represent that identity.
 
-Si no existe identificador nativo, puede usarse uno de configuración fijado en
-la primera subida, pero ofrece menos protección: el cliente debe demostrar que
-la carpeta elegida corresponde a esa identidad.
-
-## Contrato mínimo de referencia
-
-Mantener estas operaciones aunque cambien los nombres:
+## Minimum reference contract
 
 ```text
 status
@@ -58,10 +39,9 @@ history
 restore
 ```
 
-El backend debe rechazar con `409` tanto una base antigua como otra identidad.
-Una restauración debe crear una versión nueva.
+The backend must reject stale bases and conflicting identities with `409`. Restore must create a new increasing version.
 
-## Archivos que requeriría una adaptación
+## Files an adaptation would need
 
 ```text
 config/games/<game-key>.json
@@ -70,57 +50,32 @@ client/adapters/<game-key>/Adapter.ps1
 client/adapters/<game-key>/tests/*.Tests.ps1
 ```
 
-Ejemplo de JSON backend:
+An experimental instance must use independent `.env`, storage and Compose project names. Never share a database or save directory between games.
 
-```json
-{
-  "key": "example-game",
-  "displayName": "Example Game",
-  "identityField": "campaignId",
-  "identityLabel": "Campaign ID",
-  "identityPattern": "^[a-z0-9-]{3,64}$",
-  "identityNormalization": "lowercase",
-  "legacyPalworldRoutes": false
-}
-```
+## Client responsibilities
 
-Una instancia experimental debería usar `.env`, almacenamiento y proyecto
-Compose independientes. No compartir base de datos ni directorio de saves entre
-juegos.
+An adapter must safely locate/validate the local save, confirm remote identity/version, save and shut down cleanly, create a manifest/archive, and install downloads with local rollback.
 
-## Adaptación del cliente
+It must preserve these invariants:
 
-El lanzador común lee `Adapter` y `GameKey`, valida `adapter.json` y ejecuta el
-`Adapter.ps1` correspondiente. Cualquier adaptación debe resolver de forma
-segura:
+- acquire the remote lock before touching the authoritative save;
+- heartbeat for the whole session;
+- stop the writer process before creating an archive;
+- verify downloaded SHA-256;
+- keep a pending ZIP when publication cannot be confirmed;
+- do not release a modified session that was not published;
+- never invent `baseVersion` or identity to force an upload.
 
-- localizar y validar la partida local;
-- confirmar identidad y versión del servidor;
-- guardar y cerrar limpiamente;
-- seleccionar archivos y crear manifest;
-- instalar una descarga con rollback local.
+## Acceptance checklist
 
-Preservar:
+- Two simultaneous lock attempts: only one wins.
+- Two uploads based on the same version: only one publishes.
+- Wrong identity: version, file and lock remain unchanged.
+- Failure after temporary upload: the current version is still downloadable.
+- Writer process still running: the client refuses to archive.
+- Network failure: a clear local recovery artifact remains.
+- Restore: creates a higher version.
+- Private artifacts: cannot be fetched by public URL.
+- Real save/shutdown/restore/start test passes for the adapted game.
 
-- adquisición del lock antes de tocar el save;
-- heartbeat durante toda la sesión;
-- cierre del proceso antes de comprimir;
-- verificación SHA-256 de descargas;
-- ZIP pendiente si la publicación no puede confirmarse;
-- no liberar el lock tras una sesión modificada que no se publicó;
-- prohibición de inventar `baseVersion` o identidad para forzar un upload.
-
-## Checklist técnico de aceptación
-
-- Dos adquisiciones simultáneas: solo una obtiene lock.
-- Dos uploads sobre la misma base: solo uno publica.
-- Identidad incorrecta: no cambia versión, archivo ni lock.
-- Fallo después del temporal: la versión vigente sigue descargable.
-- Proceso abierto: el cliente se niega a comprimir.
-- Caída de red: se conserva una recuperación local inequívoca.
-- Restauración: produce versión creciente.
-- Artefactos privados: inaccesibles por URL.
-- Prueba real de guardar, apagar, restaurar y arrancar el juego adaptado.
-
-No declarar compatible un juego únicamente porque sus archivos puedan
-comprimirse. La consistencia del guardado es el requisito principal.
+A game is not compatible merely because its files can be zipped. Save consistency is the primary requirement.

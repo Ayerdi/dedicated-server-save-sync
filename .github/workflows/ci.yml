@@ -26,16 +26,17 @@ jobs:
           python-version: '3.11'
           cache: pip
       - run: pip install --require-hashes -r requirements-dev.txt
-      - name: Verificar scripts Bash
+      - name: Validate Bash scripts
         run: bash -n scripts/*.sh config/*.sh
-      - name: Verificar locks reproducibles
+      - name: Verify reproducible dependency locks
         run: |
           pip-compile --generate-hashes --strip-extras --output-file=requirements.txt requirements.in
           pip-compile --allow-unsafe --generate-hashes --strip-extras --output-file=requirements-dev.txt requirements-dev.in
           git diff --exit-code -- requirements.txt requirements-dev.txt
-      - run: ruff check save_sync tests wsgi.py scripts/check-docs.py scripts/backup-supervisor-e2e-hook.py
+      - run: ruff check save_sync tests wsgi.py scripts/check-docs.py scripts/check-language.py scripts/backup-supervisor-e2e-hook.py
       - run: python scripts/check-docs.py
-      - name: Ejecutar pytest
+      - run: python scripts/check-language.py
+      - name: Run pytest
         shell: bash
         run: |
           set +e
@@ -68,10 +69,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Instalar Pester
+      - name: Install Pester
         shell: powershell
         run: Install-Module Pester -RequiredVersion 5.9.0 -Force -SkipPublisherCheck -Scope CurrentUser
-      - name: Ejecutar Pester
+      - name: Run Pester
         shell: powershell
         run: Import-Module Pester -RequiredVersion 5.9.0; Invoke-Pester -Path .\client -CI
 
@@ -93,5 +94,5 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Instalar y ejecutar Gitleaks sin artefactos
+      - name: Install and run Gitleaks without artifacts
         run: bash scripts/run-gitleaks.sh

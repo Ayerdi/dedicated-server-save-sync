@@ -11,12 +11,11 @@ WIKI_ROOT = ROOT / "wiki"
 PAGES_PREFIX = "/dedicated-server-save-sync/"
 LINK_RE = re.compile(r"(?<!!)\[[^]]+\]\(([^)]+)\)")
 WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
-CURRENT_STABLE = "v2.2.1"
-PREVIOUS_STABLE = "v2.2.0"
-# Superficies que presentan la versión recomendada actual y, por tanto, no
-# deben conservar punteros a la release estable anterior. Los índices y
-# documentos de historial se excluyen deliberadamente porque deben poder
-# enlazar notas de releases pasadas.
+CURRENT_STABLE = "v2.2.2"
+PREVIOUS_STABLE = "v2.2.1"
+
+# Files that present the currently recommended release. Historical release
+# notes are intentionally excluded because they must keep old version numbers.
 CURRENT_SURFACES = (
     "README.md",
     "README.en.md",
@@ -25,13 +24,14 @@ CURRENT_SURFACES = (
     "docs/AGENT-HANDOFF.md",
     "docs/ADAPTING-OTHER-GAMES.md",
     "site/index.html",
-    "site/en/index.html",
     "wiki/Home.md",
-    "wiki/Home-English.md",
+    "wiki/Inicio.md",
     "wiki/Instalacion.md",
     "wiki/Installation.md",
     "wiki/Cliente-Windows.md",
     "wiki/Windows-Client.md",
+    "wiki/FAQ.md",
+    "wiki/FAQ-Espanol.md",
 )
 
 
@@ -82,9 +82,7 @@ def html_ids(path, cache):
 
 def main():
     failures = []
-    markdown_files = sorted(
-        path for path in ROOT.rglob("*.md") if ".git" not in path.parts
-    )
+    markdown_files = sorted(path for path in ROOT.rglob("*.md") if ".git" not in path.parts)
 
     for document in markdown_files:
         text = document.read_text(encoding="utf-8")
@@ -97,13 +95,9 @@ def main():
                 continue
             resolved = (document.parent / local).resolve()
             if ROOT not in resolved.parents and resolved != ROOT:
-                failures.append(
-                    f"{document.relative_to(ROOT)}: sale del repositorio: {target}"
-                )
+                failures.append(f"{document.relative_to(ROOT)}: link leaves repository: {target}")
             elif not resolved.exists():
-                failures.append(
-                    f"{document.relative_to(ROOT)}: enlace inexistente: {target}"
-                )
+                failures.append(f"{document.relative_to(ROOT)}: missing link target: {target}")
 
     wiki_files = sorted(WIKI_ROOT.glob("*.md")) if WIKI_ROOT.exists() else []
     for document in wiki_files:
@@ -114,9 +108,7 @@ def main():
                 continue
             candidate = WIKI_ROOT / f"{page}.md"
             if not candidate.exists():
-                failures.append(
-                    f"{document.relative_to(ROOT)}: página Wiki inexistente: {page}"
-                )
+                failures.append(f"{document.relative_to(ROOT)}: missing Wiki page: {page}")
 
     html_files = sorted(SITE_ROOT.rglob("*.html")) if SITE_ROOT.exists() else []
     id_cache = {}
@@ -129,47 +121,33 @@ def main():
             if resolved is None:
                 continue
             if SITE_ROOT not in resolved.parents and resolved != SITE_ROOT:
-                failures.append(
-                    f"{document.relative_to(ROOT)}: asset sale de site/: {raw_target}"
-                )
+                failures.append(f"{document.relative_to(ROOT)}: asset leaves site/: {raw_target}")
                 continue
             if not resolved.exists():
-                failures.append(
-                    f"{document.relative_to(ROOT)}: enlace/asset inexistente: {raw_target}"
-                )
+                failures.append(f"{document.relative_to(ROOT)}: missing link/asset: {raw_target}")
                 continue
-            if (
-                fragment
-                and resolved.suffix.lower() == ".html"
-                and fragment not in html_ids(resolved, id_cache)
-            ):
-                failures.append(
-                    f"{document.relative_to(ROOT)}: ancla inexistente: {raw_target}"
-                )
+            if fragment and resolved.suffix.lower() == ".html" and fragment not in html_ids(resolved, id_cache):
+                failures.append(f"{document.relative_to(ROOT)}: missing anchor: {raw_target}")
 
     for relative in CURRENT_SURFACES:
         document = ROOT / relative
         if not document.exists():
-            failures.append(f"{relative}: superficie estable inexistente")
+            failures.append(f"{relative}: required current-release surface is missing")
             continue
         text = document.read_text(encoding="utf-8")
         if CURRENT_STABLE not in text:
-            failures.append(
-                f"{relative}: no menciona la release estable {CURRENT_STABLE}"
-            )
+            failures.append(f"{relative}: does not mention current stable release {CURRENT_STABLE}")
         if PREVIOUS_STABLE in text:
-            failures.append(
-                f"{relative}: conserva un puntero estable obsoleto {PREVIOUS_STABLE}"
-            )
+            failures.append(f"{relative}: still presents previous stable release {PREVIOUS_STABLE}")
 
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1
+
     print(
-        "Documentación OK: "
-        f"{len(markdown_files)} Markdown, {len(wiki_files)} páginas Wiki y "
-        f"{len(html_files)} páginas HTML revisadas; punteros estables "
-        f"alineados con {CURRENT_STABLE}."
+        "Documentation OK: "
+        f"{len(markdown_files)} Markdown files, {len(wiki_files)} Wiki pages and "
+        f"{len(html_files)} HTML pages checked; current-release pointers aligned with {CURRENT_STABLE}."
     )
     return 0
 

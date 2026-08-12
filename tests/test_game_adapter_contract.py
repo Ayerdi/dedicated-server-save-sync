@@ -134,7 +134,7 @@ def test_game_key_must_match_adapter_file(tmp_path):
         ),
         encoding="utf-8",
     )
-    with pytest.raises(RuntimeError, match="no coincide"):
+    with pytest.raises(RuntimeError, match="does not match"):
         create_app(
             {
                 "TESTING": True,
@@ -157,7 +157,7 @@ def test_palworld_v1_database_requires_separate_v2_storage(tmp_path):
             "restored_from_version INTEGER,world_guid TEXT NOT NULL)"
         )
 
-    with pytest.raises(RuntimeError, match="almacenamiento separado"):
+    with pytest.raises(RuntimeError, match="separate storage"):
         create_app(
             {
                 "TESTING": True,

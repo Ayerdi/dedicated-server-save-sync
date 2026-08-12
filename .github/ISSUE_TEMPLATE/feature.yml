@@ -1,5 +1,5 @@
-name: Mejora de mantenimiento
-description: Propón una mejora acotada para la referencia estable de Palworld.
+name: Maintenance enhancement
+description: Propose a bounded improvement to the stable Palworld reference implementation.
 title: "[Enhancement]: "
 labels:
   - enhancement
@@ -7,24 +7,24 @@ body:
   - type: markdown
     attributes:
       value: |
-        v2.2.0 está en mantenimiento. No uses este formulario para rediseños
-        multi-juego, discovery universal, múltiples instancias o un agente nuevo.
+        This repository is in maintenance mode. Do not use this form for a multi-game redesign,
+        universal discovery, multiple server instances, device/cloud sync or a new cross-platform agent.
   - type: textarea
     id: problem
     attributes:
-      label: Problema
-      description: Explica el riesgo o limitación actual.
+      label: Problem
+      description: Explain the current limitation or risk.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Propuesta acotada
+      label: Bounded proposal
     validations:
       required: true
   - type: textarea
     id: safety
     attributes:
-      label: Impacto en versiones, lock, identidad y recuperación
+      label: Impact on versions, locking, identity and recovery
     validations:
       required: true

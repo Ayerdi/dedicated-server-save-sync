@@ -1,39 +1,31 @@
 # FAQ
 
-## ¿Es una alternativa a Steam Cloud?
+## Is this an alternative to Steam Cloud?
 
-No exactamente. Es un coordinador self-hosted para un servidor dedicado:
-versiona, bloquea sesiones y transporta el save entre hosts autorizados.
+Not exactly. Save Sync coordinates a dedicated server: it versions the save, locks sessions and transports one authoritative world between authorized hosts.
 
-## ¿Necesito un servidor Palworld 24/7?
+The future broader project may explore device/cloud synchronization as a separate product mode, but that is intentionally outside this Palworld reference repository.
 
-No. La web Save Sync sí debe estar disponible cuando quieras intercambiar el
-save, pero PalServer puede ejecutarse solo en el PC que vaya a alojar la sesión.
+## Do I need to keep a Palworld server online 24/7?
 
-## ¿Fusiona dos mundos distintos?
+No. The Save Sync web service must be reachable when hosts exchange the save, but PalServer only needs to run on the PC hosting the current session.
 
-No. Rechaza conflictos para evitar pérdida silenciosa, pero no puede fusionar
-progreso divergente.
+## Can it merge two different versions of a world?
 
-## ¿Debo instalar el backend desde `main`?
+No. It rejects conflicting publication attempts to prevent silent data loss, but it cannot semantically merge divergent Palworld progress.
 
-Para producción, no. Usa el tag de la release estable, actualmente `v2.2.0`, y
-el cliente de esa misma release. `main` puede contener documentación o fixes aún
-no publicados como una nueva versión del producto.
+## Should I deploy from `main`?
 
-## ¿Por qué el ZIP es v2.2.0 pero el cliente muestra 1.2.0?
+Not for production. Use the current stable tag, `v2.2.2`, and the client from that same release. `main` can contain changes that are not yet released.
 
-`v2.2.0` es la versión de la release completa del producto. `clientVersion=1.2.0`
-es la versión interna del adaptador/cliente Palworld. El backend no usa ese
-campo para decidir compatibilidad.
+## Why does the product say v2.2.2 while the client reports 1.2.0?
 
-## ¿Puedo usarlo con otros juegos?
+`v2.2.2` is the full product release. `clientVersion=1.2.0` is the internal Palworld adapter/client component version recorded in manifests and diagnostics. The backend does not use it as the product release number.
 
-El backend conserva abstracciones genéricas, pero `v2.2.0` se publica y mantiene
-como referencia estable de Palworld. La expansión multi-juego de gran alcance
-queda fuera del roadmap de este repositorio.
+## Can I use this repository with other games?
 
-## Is English documentation available?
+The backend retains generic primitives, but this repository is maintained as the stable Palworld reference. Broad multi-game support belongs in the separate successor project.
 
-Yes. Start at [[Home-English]] or use the
-[English website](https://ayerdi.github.io/dedicated-server-save-sync/en/).
+## Is Spanish documentation available?
+
+Yes. Start at [[Inicio]].

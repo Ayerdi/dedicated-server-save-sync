@@ -1,44 +1,35 @@
-# Contribuir
+# Contributing
 
-Gracias por ayudar a mantener Dedicated Server Save Sync.
+Thanks for helping maintain Dedicated Server Save Sync.
 
-`v2.2.1` marca la implementación estable de referencia para Palworld. Este
-repositorio acepta mantenimiento, no un rediseño de producto.
+`v2.2.2` is the current stable Palworld reference release. This repository accepts maintenance work, not a product redesign. The broader multi-game platform — including automatic discovery, multiple server instances and device-to-device cloud save sync — belongs in a separate project.
 
-Antes de proponer un cambio, lee [SECURITY.md](SECURITY.md) y
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Before proposing a change, read [SECURITY.md](SECURITY.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Alcance aceptado
+## Good contributions
 
-Son apropiados:
+- reproducible bug fixes and regression tests;
+- security hardening;
+- compatibility fixes for new Palworld versions;
+- dependency and CI maintenance;
+- documentation improvements;
+- small operational improvements that preserve the current model.
 
-- bugs y regresiones;
-- seguridad;
-- compatibilidad con nuevas versiones de Palworld;
-- dependencias;
-- tests;
-- documentación;
-- pequeñas mejoras operativas que preserven el modelo actual.
+Out of scope here:
 
-Quedan fuera del roadmap de este repositorio:
+- one installation managing multiple games or server instances;
+- universal save discovery;
+- a new cross-platform agent;
+- device/cloud synchronization as a new product mode;
+- incompatible architecture changes whose goal is to turn this reference into the future general platform.
 
-- instalación multi-juego en una sola instancia;
-- discovery automático universal de saves;
-- múltiples `ServerInstance` por backend;
-- sustitución del cliente por un agente multiplataforma;
-- cambios incompatibles de arquitectura para convertirlo en una plataforma.
+[docs/ADAPTING-OTHER-GAMES.md](docs/ADAPTING-OTHER-GAMES.md) remains a technical design reference, not an active support roadmap.
 
-La documentación de `docs/ADAPTING-OTHER-GAMES.md` se conserva como referencia
-técnica del diseño genérico existente.
+## Before opening an issue
 
-## Antes de abrir una incidencia
+Never attach real saves, ZIP archives, SQLite databases, tokens, passwords or `.env` files. Use private vulnerability reporting for sensitive security reports. Redact real GUIDs, domains, paths, IP addresses and personal names.
 
-- No adjuntes saves, ZIP, bases SQLite, tokens, contraseñas ni `.env` reales.
-- Usa el reporte privado de seguridad para vulnerabilidades o información
-  sensible.
-- Redacta GUIDs, dominios, rutas, IPs y nombres reales.
-
-## Desarrollo
+## Development checks
 
 ```bash
 python3 -m venv .venv
@@ -54,7 +45,7 @@ bash scripts/run-gitleaks.sh
 bash scripts/local-e2e.sh
 ```
 
-Pruebas Windows:
+Windows client tests:
 
 ```powershell
 Import-Module Pester -RequiredVersion 5.9.0
@@ -63,25 +54,23 @@ Invoke-Pester -Path .\client -CI
 
 ## Pull requests
 
-1. Crea una rama descriptiva.
-2. Añade pruebas para cambios de comportamiento.
-3. Mantén Windows PowerShell 5.1 en el cliente.
-4. Actualiza documentación y rollback cuando corresponda.
-5. Ejecuta las comprobaciones anteriores.
-6. No incluyas datos del despliegue real.
+1. Work on a descriptive branch.
+2. Add tests for behavior changes.
+3. Keep the Windows client compatible with Windows PowerShell 5.1.
+4. Document migration and rollback when persistence or deployment changes.
+5. Run the relevant checks before opening the PR.
+6. Never include data from a real deployment.
 
-Los commits deben ser pequeños y descriptivos, por ejemplo
-`fix: reject stale upload`.
+Keep commits focused and descriptive, for example `fix: reject stale upload`.
 
-Toda contribución aceptada se licencia bajo [Apache-2.0](LICENSE), conforme a la
-sección 5 de la licencia.
+Accepted contributions are licensed under [Apache-2.0](LICENSE), consistent with section 5 of the license.
 
-## Dependencias
+## Dependencies
 
-Edita `requirements.in` o `requirements-dev.in` y regenera locks:
+Edit `requirements.in` or `requirements-dev.in`, then regenerate the locked files with:
 
 ```bash
 bash scripts/update-dependencies.sh
 ```
 
-No edites manualmente `requirements*.txt`.
+Do not edit `requirements*.txt` by hand.

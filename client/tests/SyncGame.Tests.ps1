@@ -1,5 +1,5 @@
 Describe 'Registro de adaptadores' {
-    It 'incluye un adaptador Palworld coherente con la configuración de ejemplo' {
+    It 'includes a Palworld adapter consistent with the example configuration' {
         $clientRoot = Resolve-Path "$PSScriptRoot/.."
         $config = Get-Content "$clientRoot/config.example.json" -Raw | ConvertFrom-Json
         $manifest = Get-Content "$clientRoot/adapters/palworld/adapter.json" -Raw |

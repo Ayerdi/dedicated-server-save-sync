@@ -1,10 +1,8 @@
-# Desarrollo local aislado
+# Isolated local development
 
-Este modo sirve para validar backend, API y persistencia sin Traefik ni
-Authentik. Publica el puerto únicamente en `127.0.0.1` y desactiva HTTPS dentro
-del entorno local. Nunca debe reutilizarse como despliegue de Internet.
+This mode validates the backend, API and persistence without Traefik or Authentik. It binds only to `127.0.0.1` and disables HTTPS inside the local test environment. **Never expose this configuration to the Internet.**
 
-## Arranque manual
+## Manual startup
 
 ```bash
 cp .env.local.example .env.local
@@ -16,8 +14,7 @@ docker compose --env-file .env.local \
   up --detach --build --wait
 ```
 
-El token exclusivamente local del ejemplo es `local-development-token`. Para
-evitar copiarlo accidentalmente a otra instalación, léelo del fichero local:
+The example-only local token is `local-development-token`. Read it from the local file instead of copying it into commands elsewhere:
 
 ```bash
 local_token="$(sed -n 's/^.*"token":"\([^"]*\)".*$/\1/p' .env.local)"
@@ -26,7 +23,7 @@ curl --fail-with-body \
   http://127.0.0.1:18080/api/games/palworld/status
 ```
 
-Detener y eliminar también el volumen de prueba:
+Stop the stack and remove the test volume:
 
 ```bash
 docker compose --env-file .env.local \
@@ -36,28 +33,25 @@ docker compose --env-file .env.local \
   down --volumes --remove-orphans
 ```
 
-## E2E automatizado
+## Automated E2E
 
 ```bash
 bash scripts/local-e2e.sh
 ```
 
-La prueba crea un proyecto y volumen efímeros, y verifica:
+The test creates an isolated project and volume and checks:
 
 ```text
 bootstrap → status v0 → lock → upload v1 → download/hash
-→ descarga histórica → restore v2 → world_guid_conflict
-→ lock conservado → unlock
+→ historical download → restore v2 → identity conflict
+→ lock preserved → unlock
 ```
 
-El `trap` retira contenedor, red, volumen y temporales incluso si una aserción
-falla. No accede al despliegue de producción ni ejecuta PalServer.
+Its cleanup trap removes containers, network, volume and temporary files even when an assertion fails. It never touches a production deployment or starts PalServer.
 
 ## Troubleshooting
 
-- `port is already allocated`: cambia `SAVE_SYNC_LOCAL_PORT` en `.env.local`.
-- `container name is already in use`: cambia `SAVE_SYNC_CONTAINER_NAME`.
-- El healthcheck no pasa: revisa `docker compose ... logs` y confirma que los
-  secretos de desarrollo tienen al menos 32 caracteres.
-- Un token local no funciona: elimina el volumen y repite el bootstrap; no
-  reutilices la variable bootstrap en producción.
+- `port is already allocated`: change `SAVE_SYNC_LOCAL_PORT` in `.env.local`.
+- `container name is already in use`: change `SAVE_SYNC_CONTAINER_NAME`.
+- healthcheck fails: inspect `docker compose ... logs` and confirm development secrets are at least 32 characters.
+- local token stops working: remove the test volume and bootstrap again; never reuse the development bootstrap token in production.

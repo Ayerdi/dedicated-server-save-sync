@@ -23,13 +23,13 @@ health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{
 
 published_ports="$(docker inspect --format '{{json .NetworkSettings.Ports}}' "${CONTAINER_NAME}")"
 if [[ "${published_ports}" != '{"8080/tcp":null}' && "${published_ports}" != '{}' ]]; then
-  log "El backend tiene una publicacion de puertos inesperada."
+  log "The backend exposes an unexpected host port."
   exit 1
 fi
 
 api_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
   "${PUBLIC_BASE_URL}/api/games/${GAME_KEY}/status")"
-[[ "${api_status}" == "401" ]] || { log "La API sin Bearer devolvio ${api_status}, se esperaba 401."; exit 1; }
+[[ "${api_status}" == "401" ]] || { log "The API without a Bearer token returned ${api_status}; expected 401."; exit 1; }
 
 if [[ "${PANEL_MODE}" == "authentik" ]]; then
   panel_headers="$(mktemp)"
@@ -38,13 +38,13 @@ if [[ "${PANEL_MODE}" == "authentik" ]]; then
     "${PUBLIC_BASE_URL}/games/${GAME_KEY}")"
   case "${panel_status}" in
     301|302|303|307|308) ;;
-    *) log "El panel anonimo devolvio ${panel_status}, se esperaba redireccion Authentik."; exit 1 ;;
+    *) log "The anonymous panel returned ${panel_status}; expected an Authentik redirect."; exit 1 ;;
   esac
   if ! grep -Eiq '^location: .+' "${panel_headers}"; then
-    log "La redireccion del panel no incluye Location."
+    log "The panel redirect does not include a Location header."
     exit 1
   fi
-  log "OK: backend healthy, sin puertos publicados, API=401 y panel protegido por Authentik."
+  log "OK: backend healthy, no published host ports, API=401 and panel protected by Authentik."
 else
   log "OK: backend healthy, sin puertos publicados y API=401; panel deshabilitado."
 fi

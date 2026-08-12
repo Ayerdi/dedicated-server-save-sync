@@ -1,34 +1,29 @@
 # Dedicated Server Save Sync
 
-**Versión estable: v2.2.1 · Palworld**
+**Stable release: v2.2.2 · Palworld**
 
-Save Sync permite alternar qué PC aloja un servidor dedicado de Palworld sin
-copiar saves a mano ni mantener uno de los PCs encendido permanentemente.
+Save Sync lets multiple PCs alternate as the Palworld dedicated-server host without manually passing save archives around or keeping one gaming PC online permanently.
 
-## Empieza aquí
+## Start here
 
-- [[Instalacion]]
-- [[Cliente-Windows]]
-- [[Backups-y-recuperacion]]
-- [[Resolucion-de-problemas]]
+- [[Installation]]
+- [[Windows-Client]]
+- [[Backups-and-Recovery]]
+- [[Troubleshooting]]
 - [[FAQ]]
-- [[Home-English|English]]
+- [[Inicio|Español]]
 
-## Qué protege
+## What it protects
 
-Save Sync usa una versión autoritativa, `baseVersion`, un lock con heartbeat,
-`worldGuid`, SHA-256 y publicación atómica. Una copia antigua no puede
-sobrescribir silenciosamente progreso más reciente.
+Save Sync combines one authoritative version with `baseVersion`, an exclusive heartbeat lock, `worldGuid`, SHA-256 verification and atomic publication. A stale copy cannot silently overwrite newer progress.
 
-Los backups externos se encolan de forma durable en SQLite y los ejecuta un
-supervisor independiente del proceso web; un reinicio del host web no pierde la
-supervisión del trabajo pendiente.
+External backups are durably queued in SQLite and executed by a supervisor independent from the web process. Restarting the web service does not lose pending backup work.
 
-El proyecto no puede fusionar dos mundos que ya hayan divergido.
+Save Sync intentionally **cannot merge worlds that already diverged**. When two independent copies contain different progress, a human must decide which one is authoritative.
 
-## Recursos
+## Resources
 
-- [README](https://github.com/Ayerdi/dedicated-server-save-sync)
-- [Web](https://ayerdi.github.io/dedicated-server-save-sync/)
+- [Repository](https://github.com/Ayerdi/dedicated-server-save-sync)
+- [Website](https://ayerdi.github.io/dedicated-server-save-sync/)
 - [Releases](https://github.com/Ayerdi/dedicated-server-save-sync/releases)
-- [Seguridad](https://github.com/Ayerdi/dedicated-server-save-sync/security/policy)
+- [Security](https://github.com/Ayerdi/dedicated-server-save-sync/security/policy)

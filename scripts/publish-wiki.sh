@@ -9,17 +9,17 @@ if [[ "${1:-}" != "--apply" || $# -ne 1 ]]; then
   exit 2
 fi
 
-command -v gh >/dev/null || { printf 'Falta GitHub CLI (gh).\n' >&2; exit 1; }
-command -v git >/dev/null || { printf 'Falta git.\n' >&2; exit 1; }
+command -v gh >/dev/null || { printf 'GitHub CLI (gh) is required.\n' >&2; exit 1; }
+command -v git >/dev/null || { printf 'git is required.\n' >&2; exit 1; }
 cd "${ROOT_DIR}"
 
 gh auth status >/dev/null 2>&1 || {
-  printf 'GitHub CLI no tiene una sesión válida. Ejecuta gh auth login.\n' >&2
+  printf 'GitHub CLI has no valid session. Run gh auth login.\n' >&2
   exit 1
 }
-[[ -d wiki ]] || { printf 'Falta el directorio wiki/.\n' >&2; exit 1; }
+[[ -d wiki ]] || { printf 'wiki/ directory is missing.\n' >&2; exit 1; }
 [[ -z "$(git status --short)" ]] || {
-  printf 'El árbol Git debe estar limpio; la Wiki nunca publica cambios no committeados.\n' >&2
+  printf 'The Git tree must be clean; the Wiki never publishes uncommitted changes.\n' >&2
   exit 1
 }
 [[ "$(git branch --show-current)" == "main" ]] || {
@@ -31,7 +31,7 @@ git fetch --quiet origin main
 head_sha="$(git rev-parse HEAD)"
 remote_sha="$(git rev-parse origin/main)"
 if [[ "${head_sha}" != "${remote_sha}" ]]; then
-  printf 'HEAD no coincide con origin/main. Actualiza el checkout antes de publicar la Wiki.\n' >&2
+  printf 'HEAD does not match origin/main. Update the checkout before publishing the Wiki.\n' >&2
   exit 1
 fi
 
@@ -39,19 +39,19 @@ ci_state="$(gh run list --repo "${REPOSITORY}" --workflow ci.yml --branch main -
   --json headSha,status,conclusion \
   --jq '.[0] | (.headSha // "") + ":" + (.status // "") + ":" + (.conclusion // "")')"
 if [[ "${ci_state}" != "${head_sha}:completed:success" ]]; then
-  printf 'La CI de main no está verde para el HEAD actual (%s).\n' "${ci_state:-sin ejecución}" >&2
+  printf 'Main CI is not green for the current HEAD (%s).\n' "${ci_state:-no run}" >&2
   exit 1
 fi
 
 visibility="$(gh repo view "${REPOSITORY}" --json visibility --jq .visibility)"
 if [[ "${visibility}" != "PUBLIC" ]]; then
-  printf 'La Wiki pública se sincroniza únicamente después de abrir el repositorio.\n' >&2
+  printf 'The public Wiki is synchronized only after the repository is public.\n' >&2
   exit 1
 fi
 
 wiki_enabled="$(gh repo view "${REPOSITORY}" --json hasWikiEnabled --jq .hasWikiEnabled)"
 if [[ "${wiki_enabled}" != "true" ]]; then
-  printf 'Activa la Wiki del repositorio antes de sincronizarla.\n' >&2
+  printf 'Enable the repository Wiki before synchronizing it.\n' >&2
   exit 1
 fi
 
@@ -63,8 +63,8 @@ WIKI_URL="https://github.com/${REPOSITORY}.wiki.git"
 
 if ! git clone --quiet "${WIKI_URL}" "${TEMP_DIR}/repo"; then
   cat >&2 <<'EOF'
-GitHub todavía no ha inicializado el repositorio de la Wiki.
-Abre la pestaña Wiki, crea una página Home mínima y vuelve a ejecutar:
+GitHub has not initialized the Wiki repository yet.
+Open the Wiki tab, create a minimal Home page and run again:
   bash scripts/publish-wiki.sh --apply
 EOF
   exit 1
@@ -76,7 +76,7 @@ cp wiki/*.md "${TEMP_DIR}/repo/"
 cd "${TEMP_DIR}/repo"
 git add --all
 if git diff --cached --quiet; then
-  printf 'La Wiki ya está sincronizada.\n'
+  printf 'The Wiki is already synchronized.\n'
   exit 0
 fi
 

@@ -9,27 +9,27 @@ Describe 'World GUID' {
             Should -Be 'A7E97BAA767DB9029EF013BB71E993A0'
     }
 
-    It 'rechaza valores vacíos o con otro formato' {
+    It 'rejects empty values or values with another format' {
         Test-ValidWorldGuid '' | Should -BeFalse
-        Test-ValidWorldGuid '../otro-mundo' | Should -BeFalse
+        Test-ValidWorldGuid '../other-world' | Should -BeFalse
         { Normalize-WorldGuid '1234' } | Should -Throw
     }
 }
 
 Describe 'Entradas ZIP' {
-    It 'acepta rutas relativas seguras' {
+    It 'accepts safe relative paths' {
         Test-SafeZipEntryName 'SaveGames/0/GUID/Level.sav' | Should -BeTrue
     }
 
-    It 'rechaza traversal, rutas absolutas y unidades Windows' {
+    It 'rejects traversal, absolute paths and Windows drives' {
         Test-SafeZipEntryName '../Level.sav' | Should -BeFalse
         Test-SafeZipEntryName '/tmp/Level.sav' | Should -BeFalse
         Test-SafeZipEntryName 'C:\\temp\\Level.sav' | Should -BeFalse
     }
 }
 
-Describe 'Versión del cliente' {
-    It 'declara una versión SemVer' {
+Describe 'Client version' {
+    It 'declares a SemVer version' {
         $ClientVersion | Should -Match '^\d+\.\d+\.\d+$'
     }
 }

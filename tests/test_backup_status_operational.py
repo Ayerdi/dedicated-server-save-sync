@@ -38,8 +38,8 @@ def test_backup_status_separates_current_result_from_hook_enabled(app):
     }
     panel = client.get("/games/palworld", headers=web_headers).get_data(as_text=True)
     assert 'id="backupConfig"' in panel
-    assert "Backup automático: ${b.enabled?'activado':'desactivado ⚠'}" in panel
-    assert "Estado de la versión actual:" in panel
+    assert "Automatic backup: ${b.enabled?'enabled':'disabled ⚠'}" in panel
+    assert "Current version backup state:" in panel
 
 
 def test_backup_status_finds_last_completed_beyond_500_failures(app):
