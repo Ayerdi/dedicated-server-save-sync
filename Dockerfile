@@ -1,4 +1,4 @@
-FROM python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93
+FROM python:3.14-slim@sha256:a7fb1e634c4a578f9e0bd6327f11a3cde11b7a9395f48e24360c0988bcc5c2bc
 
 LABEL org.opencontainers.image.source="https://github.com/Ayerdi/dedicated-server-save-sync" \
       org.opencontainers.image.description="Concurrency-safe save synchronization for dedicated game servers" \
