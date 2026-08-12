@@ -3,189 +3,181 @@
 [![CI](https://github.com/Ayerdi/dedicated-server-save-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/Ayerdi/dedicated-server-save-sync/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Ayerdi/dedicated-server-save-sync)](https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest)
 [![License](https://img.shields.io/github/license/Ayerdi/dedicated-server-save-sync)](LICENSE)
+[![Pages](https://github.com/Ayerdi/dedicated-server-save-sync/actions/workflows/pages.yml/badge.svg)](https://github.com/Ayerdi/dedicated-server-save-sync/actions/workflows/pages.yml)
 
-**Sincronización segura de partidas para alojar alternativamente un servidor dedicado de Palworld en varios PCs sin mantener uno encendido 24/7.**
+**Concurrency-safe save synchronization for alternating Palworld dedicated-server hosts without keeping one gaming PC online 24/7.**
 
-> **Estado:** `v2.2.1` es la referencia estable de Palworld. Este repositorio está en mantenimiento: correcciones, seguridad, dependencias y compatibilidad con Palworld. La evolución multi-juego se desarrollará por separado.
+> **Status:** `v2.2.2` is the stable Palworld reference release. This repository is in maintenance mode: bug fixes, security updates, dependency maintenance, documentation and Palworld compatibility. The broader multi-game / device-sync product will be developed separately.
 
-[English](README.en.md) · [Web](https://ayerdi.github.io/dedicated-server-save-sync/) · [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki) · [Releases](https://github.com/Ayerdi/dedicated-server-save-sync/releases) · [Documentación](docs/INDEX.md)
+[Website](https://ayerdi.github.io/dedicated-server-save-sync/) · [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki) · [Docs](docs/INDEX.md) · [Releases](https://github.com/Ayerdi/dedicated-server-save-sync/releases) · [Discussions](https://github.com/Ayerdi/dedicated-server-save-sync/discussions)
 
-> Palworld es una marca de Pocketpair, Inc. Este proyecto comunitario no está afiliado, patrocinado ni respaldado por Pocketpair. No distribuye archivos del juego ni contenido de sus saves.
+> **Spanish documentation:** the repository itself is maintained in English. The [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki) keeps a complete Spanish section alongside the English pages.
 
-## Qué problema resuelve
+> Palworld is a trademark of Pocketpair, Inc. This community project is not affiliated with, sponsored by or endorsed by Pocketpair. It does not distribute game files or save content.
 
-Compartir manualmente un ZIP, una carpeta de red o un directorio de nube no crea una autoridad común. Dos hosts pueden arrancar copias distintas, una fecha de modificación puede cambiar al copiar y una carpeta perfectamente válida puede pertenecer a otro mundo.
+## The problem
 
-Save Sync separa el servidor de juego del almacenamiento autoritativo:
+A shared ZIP, network folder or cloud directory does not establish a single source of truth. Two hosts can start divergent copies, timestamps can change while files are copied, and a perfectly valid directory may belong to a different world.
+
+Save Sync separates the game server from the authoritative save store:
 
 ```mermaid
 flowchart LR
-  A[PC anfitrión A] -->|HTTPS + Bearer| API[Save Sync]
-  B[PC anfitrión B] -->|HTTPS + Bearer| API
+  A[Host PC A] -->|HTTPS + Bearer| API[Save Sync]
+  B[Host PC B] -->|HTTPS + Bearer| API
   API --> DB[(SQLite WAL)]
-  API --> FS[(ZIP versionados)]
-  API -. backup opcional .-> EXT[(restic / almacenamiento externo)]
+  API --> FS[(Versioned ZIPs)]
+  API -. optional backup .-> EXT[(restic / external storage)]
   A -->|localhost REST| PA[PalServer]
   B -->|localhost REST| PB[PalServer]
 ```
 
-El PC que juega ejecuta PalServer. La web conserva la versión válida, arbitra el lock y rechaza uploads obsoletos o pertenecientes a otro mundo.
+The active gaming PC runs PalServer. Save Sync keeps the authoritative version, arbitrates the session lock and rejects stale uploads or saves from another world.
 
-## Garantías principales
+## Safety properties
 
-- versión entera creciente asignada por el backend;
-- control optimista mediante `baseVersion`;
-- lock exclusivo con `sessionId`, TTL y heartbeat;
-- identidad de partida (`saveIdentity`); Palworld usa `worldGuid`;
-- SHA-256 recalculado en servidor;
-- ZIP defensivo contra traversal, symlinks, exceso de entradas y ZIP bombs;
-- publicación temporal e inmutable antes de mover la autoridad en SQLite;
-- restauración como **nueva** versión, nunca reescritura silenciosa;
-- tokens Bearer por equipo almacenados únicamente como hashes;
-- secretos locales cifrados con Windows DPAPI;
-- retención configurable por slot;
-- cola durable de backup externo supervisada fuera de Gunicorn, con timeout, reintento y auditoría;
-- panel con estado observable del backup sin fingir que un snapshot remoto sigue existiendo.
+- backend-assigned monotonically increasing integer versions;
+- optimistic concurrency through `baseVersion`;
+- exclusive lock with `sessionId`, TTL and heartbeat;
+- adapter-defined save identity; Palworld uses `worldGuid`;
+- server-side SHA-256 verification;
+- defensive ZIP validation against path traversal, symlinks, entry floods and ZIP bombs;
+- immutable publication before SQLite moves the authoritative pointer;
+- restore creates a **new** version instead of rewriting history;
+- per-machine Bearer tokens stored only as hashes;
+- Windows DPAPI for client-side secrets;
+- configurable per-slot retention;
+- durable external-backup queue supervised outside Gunicorn, with timeout, retry and audit trail;
+- backup status that reports what is actually known instead of pretending a remote snapshot was checked live.
 
-Save Sync **no fusiona mundos divergentes**. Si dos copias fueron modificadas de forma independiente, hay que elegir una de manera explícita.
+Save Sync **does not merge divergent worlds**. If two copies were independently modified, one must be chosen explicitly.
 
-## Descarga recomendada
+## Recommended installation
 
-La forma más cómoda para el PC Windows es descargar el ZIP del cliente desde la [última release](https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest). Cada release publica también un archivo `.sha256`.
-
-Para producción usa **la misma release del producto** en cliente y backend. El backend estable debe desplegarse desde el tag `v2.2.1`, no desde la punta cambiante de `main`.
-
-## Inicio rápido
+For production, use **the same product release** for the client and backend. Do not deploy the moving tip of `main` on a real world.
 
 ### 1. Backend
 
-Requisitos de producción:
+Requirements:
 
 - Docker Engine + Docker Compose v2;
 - HTTPS;
-- una ruta privada de almacenamiento;
-- Traefik + ForwardAuth/AuthentiK para el panel, o modo API-only.
+- private filesystem storage;
+- Traefik + ForwardAuth/AuthentiK for the private panel, or API-only mode.
 
 ```bash
-git clone --branch v2.2.1 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
+git clone --branch v2.2.2 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
 cd dedicated-server-save-sync
 config/deploy.sh --init-env
 ```
 
-Revisa `.env` y despliega:
+Review `.env`, then deploy:
 
 ```bash
 config/deploy.sh
 ```
 
-Para validar el proyecto sin proxy, dominio ni PalServer:
+To validate the stack locally without a reverse proxy, domain or PalServer:
 
 ```bash
 bash scripts/local-e2e.sh
 ```
 
-### 2. Cliente Windows
+### 2. Windows client
 
-1. Descarga `dedicated-server-save-sync-client-v2.2.1.zip` y su `.sha256` desde Releases.
-2. Verifica el checksum antes de extraerlo.
-3. Copia `client/config.example.json` a `client/config.json`.
-4. Configura la URL pública, la ruta de PalServer y `Adapter=palworld`.
-5. Ejecuta `client/Configurar-secretos.cmd`.
-6. Ejecuta `client/Probar-conexion.cmd`.
-7. Inicia con `client/Iniciar-PalworldSync.cmd`.
+1. Download `dedicated-server-save-sync-client-v2.2.2.zip` and its `.sha256` file from [Releases](https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest).
+2. Verify the checksum before extracting the archive.
+3. Copy `client/config.example.json` to `client/config.json`.
+4. Configure the public URL, PalServer path and `Adapter=palworld`.
+5. Run `client/Configure-Secrets.cmd`.
+6. Run `client/Test-Connection.cmd`.
+7. Start sessions through `client/Start-PalworldSync.cmd`.
 
-En PowerShell puedes verificar el paquete así:
+The older Spanish command filenames remain in the package as compatibility aliases, so existing installations and scripts do not break.
+
+PowerShell checksum verification:
 
 ```powershell
-$zip = 'dedicated-server-save-sync-client-v2.2.1.zip'
+$zip = 'dedicated-server-save-sync-client-v2.2.2.zip'
 $expected = ((Get-Content "$zip.sha256") -split '\s+')[0].ToLowerInvariant()
 $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actual -ne $expected) { throw 'El SHA-256 del cliente no coincide.' }
+if ($actual -ne $expected) { throw 'Client SHA-256 mismatch.' }
 ```
 
-El flujo normal es:
+Normal session flow:
 
 ```text
-status → lock → descarga si procede → arranque → heartbeat
-→ save/shutdown REST → ZIP/SHA-256 → upload
+status → lock → download if needed → start → heartbeat
+→ REST save/shutdown → ZIP/SHA-256 → upload
 ```
 
-El cliente comprueba el `worldGuid` real mediante la REST local de Palworld antes de permitir una sesión y antes de publicar. **No abras el puerto REST de Palworld en el router**.
+The client verifies the real `worldGuid` through Palworld's local REST API before starting and before publishing. **Do not expose Palworld's REST port through your router.**
 
-Consulta [client/README.md](client/README.md) y [docs/OPERATIONS.md](docs/OPERATIONS.md) antes del primer uso real.
+Read [client/README.md](client/README.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md) before first production use.
 
-## Backups
+## Durable backups
 
-`SAVE_SYNC_RETENTION_PER_SLOT` limita cuántas versiones operativas se conservan por host/slot.
+`SAVE_SYNC_RETENTION_PER_SLOT` limits operational versions per host/slot.
 
-`SAVE_SYNC_POST_PUBLISH_COMMAND` define el backup externo posterior a una publicación confirmada, por ejemplo con `restic`. El backend encola el trabajo en SQLite y un sidecar `backup-supervisor` independiente de Gunicorn lo ejecuta, aplica timeout y conserva la fila para reintento si el supervisor cae. El comando debe permanecer en foreground y ser idempotente o tolerar ejecuciones repetidas.
+`SAVE_SYNC_POST_PUBLISH_COMMAND` defines an external backup after a confirmed publication. The web process only queues the work in SQLite; a separate `backup-supervisor` service executes it, applies the timeout, audits the result and retains the row for retry if the supervisor crashes before recording a final outcome.
 
-Una versión con backup pendiente queda protegida frente a retención hasta obtener un resultado final conocido. La eliminación física de ZIPs ocurre después de confirmar la metadata de retención y revalidar referencias, de forma que un crash pueda dejar un archivo huérfano recuperable, pero no metadata confirmada apuntando a un ZIP borrado por una transacción revertida.
+A version with a pending backup stays protected from retention. Physical ZIP deletion occurs only after retention metadata is committed and current references are revalidated.
 
-El panel y `GET /backup-status` distinguen:
+`GET /backup-status` and the panel distinguish current backup configuration from historical results. `latestVersionBackedUp=true` means the configured hook reported success for the current version; it does **not** mean the restic repository was queried live.
 
-- si el backup automático está habilitado **ahora**;
-- si el hook de la versión actual terminó correctamente;
-- pendientes activos;
-- markers vencidos;
-- último intento y último éxito conocido.
+## Security
 
-`latestVersionBackedUp=true` significa “el hook confirmó éxito”, no “se acaba de consultar restic y el snapshot continúa disponible”.
+Never publish real `.env`, client configuration/secrets, tokens, passwords, saves, ZIP archives, SQLite databases, complete logs, production paths, GUIDs, IPs, domains or personal names.
 
-## Seguridad
+CI runs Ruff, pytest with an 85% coverage floor, `pip-audit`, Docker E2E —including supervisor crash/restart—, Pester and Gitleaks over Git history.
 
-No publiques nunca:
+Use [SECURITY.md](SECURITY.md) for vulnerabilities. Use [GitHub Discussions](https://github.com/Ayerdi/dedicated-server-save-sync/discussions) or [issues](https://github.com/Ayerdi/dedicated-server-save-sync/issues) for non-sensitive support.
 
-- `.env`, `client/config.json` o `client/data/secrets.json`;
-- tokens, contraseñas o cabeceras `Authorization`;
-- saves, ZIP, SQLite, logs completos ni rutas de producción;
-- GUID, IP, dominio o nombres personales reales cuando abras una incidencia.
+## Project scope
 
-El repositorio ejecuta Ruff, pytest con cobertura mínima del 85 %, `pip-audit`, Docker E2E —incluido crash/restart del supervisor—, Pester y Gitleaks sobre el historial Git.
+The backend retains generic primitives (`gameKey`, `saveIdentity`, adapters), and the repository keeps technical documentation for that design. However, **the stable product in this repository supports Palworld**.
 
-Para vulnerabilidades usa [SECURITY.md](SECURITY.md). Para soporte no sensible usa [GitHub Discussions](https://github.com/Ayerdi/dedicated-server-save-sync/discussions) o las [incidencias](https://github.com/Ayerdi/dedicated-server-save-sync/issues).
+A broader product covering multi-game installations, automatic save discovery, multiple server instances, device-to-device cloud save synchronization and a cross-platform agent is intentionally outside this repository's maintenance scope.
 
-## Alcance del proyecto
-
-El backend conserva primitivas genéricas (`gameKey`, `saveIdentity`, adaptadores), y se mantiene documentación técnica sobre ese diseño. Sin embargo, **la versión pública estable de este repositorio soporta Palworld**.
-
-Los rediseños que impliquen instalación multi-juego, discovery automático, múltiples instancias de servidor o un agente multiplataforma no forman parte del roadmap de mantenimiento de este repositorio.
-
-## Desarrollo
+## Development
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
 pip install --require-hashes -r requirements-dev.txt
-ruff check save_sync tests wsgi.py
+bash -n scripts/*.sh config/*.sh
+ruff check save_sync tests wsgi.py scripts/check-docs.py
+python scripts/check-docs.py
 python -m pytest -q
 pip-audit -r requirements.txt --progress-spinner=off
+docker compose config --quiet
 bash scripts/run-gitleaks.sh
 bash scripts/local-e2e.sh
 ```
 
-En Windows:
+Windows client tests:
 
 ```powershell
 Import-Module Pester -RequiredVersion 5.9.0
 Invoke-Pester -Path .\client -CI
 ```
 
-## Documentación
+## Documentation
 
-- [Índice](docs/INDEX.md)
-- [Arquitectura e invariantes](docs/ARCHITECTURE.md)
-- [Contrato HTTP](docs/API.md)
-- [Despliegue y operación](docs/OPERATIONS.md)
-- [Desarrollo local](docs/LOCAL-DEVELOPMENT.md)
-- [Migraciones](docs/MIGRATIONS.md)
-- [Referencia del diseño multi-juego](docs/ADAPTING-OTHER-GAMES.md)
-- [Releases](docs/RELEASES.md)
-- [Checklist de publicación](docs/PUBLICATION.md)
-- [Seguridad](SECURITY.md)
-- [Soporte](SUPPORT.md)
-- [Contribuir](CONTRIBUTING.md)
+- [Documentation index](docs/INDEX.md)
+- [Architecture and invariants](docs/ARCHITECTURE.md)
+- [HTTP API](docs/API.md)
+- [Operations](docs/OPERATIONS.md)
+- [Local development](docs/LOCAL-DEVELOPMENT.md)
+- [Migrations](docs/MIGRATIONS.md)
+- [Multi-game design reference](docs/ADAPTING-OTHER-GAMES.md)
+- [Release process](docs/RELEASES.md)
+- [Publication checklist](docs/PUBLICATION.md)
+- [Maintainer guide](docs/AGENT-HANDOFF.md)
+- [Security](SECURITY.md)
+- [Support](SUPPORT.md)
+- [Contributing](CONTRIBUTING.md)
 
-## Licencia
+## License
 
-Código y documentación: [Apache License 2.0](LICENSE).
+Code and documentation: [Apache License 2.0](LICENSE).

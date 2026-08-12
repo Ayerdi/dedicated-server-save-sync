@@ -61,7 +61,7 @@ wait_exec_file() {
   local deadline=$((SECONDS + 30))
   until "${compose[@]}" exec -T backup-supervisor test -f "${path}"; do
     if (( SECONDS >= deadline )); then
-      printf 'Timeout esperando %s\n' "${path}" >&2
+      printf 'Timeout waiting for %s\n' "${path}" >&2
       "${compose[@]}" logs --no-color backup-supervisor >&2 || true
       return 1
     fi
@@ -96,7 +96,7 @@ PY
     fi
     sleep 0.2
   done
-  printf 'Timeout esperando backup completado v%s\n' "${version}" >&2
+  printf 'Timeout waiting for backup completado v%s\n' "${version}" >&2
   curl --silent -H "${AUTH_HEADER}" "${BASE_URL}/backup-status" >&2 || true
   "${compose[@]}" logs --no-color backup-supervisor >&2 || true
   return 1
@@ -131,27 +131,27 @@ PY
     "${BASE_URL}/upload"
 }
 
-# Caso 1: el backup sigue vivo aunque desaparezca por completo el web/Gunicorn.
+# Case 1: the backup remains alive even if the web/Gunicorn service disappears completely.
 publish_version "worker-crash" >/dev/null
 wait_exec_file "/data/save-sync/temporary/backup-e2e-started-v1-1"
 supervisor_before="$("${compose[@]}" ps -q backup-supervisor)"
 "${compose[@]}" kill dedicated-server-save-sync >/dev/null
-# Arranca el web sin esperar su healthcheck: el backup debe poder continuar sin
-# depender de que Gunicorn esté listo para servir HTTP.
+# Start the web service without waiting for its healthcheck: backup must continue without
+# depending on Gunicorn being ready to serve HTTP.
 "${compose[@]}" up --detach dedicated-server-save-sync >/dev/null
 supervisor_after="$("${compose[@]}" ps -q backup-supervisor)"
 [[ -n "${supervisor_before}" && "${supervisor_before}" == "${supervisor_after}" ]]
 "${compose[@]}" exec -T backup-supervisor \
   touch /data/save-sync/temporary/backup-e2e-release-v1
-# Solo después de liberar el hook esperamos a que el web vuelva a healthy para
-# consultar /backup-status. Así el timeout del backup no queda ligado al health
+# Only after releasing the hook do we wait for the web service to become healthy again so
+# /backup-status can be queried. This keeps backup timeout independent from web health.
 # interval del servicio web.
 "${compose[@]}" up --detach --wait dedicated-server-save-sync >/dev/null
 wait_backup_completed 1
 
-# Caso 2: también el supervisor puede morir; la fila durable debe sobrevivir y
-# ser reclamada por la nueva ejecución, que generará el intento 2. Docker puede
-# reiniciar el mismo container-id, por eso se valida semántica, no runtime-id.
+# Case 2: the supervisor can also die; the durable row must survive and
+# be reclaimed by the new run, which will produce attempt 2. Docker may
+# restart the same container-id, so semantics are validated rather than runtime-id.
 publish_version "supervisor-crash" >/dev/null
 wait_exec_file "/data/save-sync/temporary/backup-e2e-started-v2-1"
 "${compose[@]}" kill backup-supervisor >/dev/null || true

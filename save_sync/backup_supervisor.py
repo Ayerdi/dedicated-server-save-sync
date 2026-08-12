@@ -36,22 +36,22 @@ def load_identities(raw):
     try:
         value = json.loads(raw)
     except (TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON no es JSON válido") from exc
+        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON is not valid JSON") from exc
     if not isinstance(value, dict):
         raise RuntimeError(  # noqa: TRY004
-            "SAVE_SYNC_USER_IDENTITIES_JSON debe ser un objeto JSON"
+            "SAVE_SYNC_USER_IDENTITIES_JSON must be a JSON object"
         )
     result = {}
     for username, profile in value.items():
         if not isinstance(profile, dict):
             raise RuntimeError(  # noqa: TRY004
-                f"Perfil de identidad inválido para {username}"
+                f"Invalid identity profile for {username}"
             )
         display = str(profile.get("displayName", "")).strip()
         slot = str(profile.get("slot", "")).strip()
         if not str(username).strip() or not display or not slot:
             raise RuntimeError(
-                "Cada identidad necesita username, displayName y slot no vacíos"
+                "Each identity requires non-empty username, displayName and slot values"
             )
         result[str(username).casefold()] = {"displayName": display, "slot": slot}
     return result
@@ -90,11 +90,11 @@ class BackupSupervisor:
         self._warned_disabled_pending = False
         self.heartbeat_path = self.storage / "temporary" / "backup-supervisor.heartbeat"
         if self.timeout_seconds < 1:
-            raise RuntimeError("SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS debe ser >= 1")
+            raise RuntimeError("SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS must be >= 1")
         if self.poll_seconds <= 0:
-            raise RuntimeError("SAVE_SYNC_BACKUP_POLL_SECONDS debe ser > 0")
+            raise RuntimeError("SAVE_SYNC_BACKUP_POLL_SECONDS must be > 0")
         if self.retention_per_slot < 1:
-            raise RuntimeError("SAVE_SYNC_RETENTION_PER_SLOT debe ser >= 1")
+            raise RuntimeError("SAVE_SYNC_RETENTION_PER_SLOT must be >= 1")
 
     @classmethod
     def from_environment(cls):
@@ -243,7 +243,7 @@ class BackupSupervisor:
                 raise
 
     def reconcile_filesystem(self):
-        """Borra solo ZIPs que siguen sin referencia tras un COMMIT previo."""
+        """Delete only ZIPs that remain unreferenced after a prior COMMIT."""
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             try:
@@ -264,8 +264,8 @@ class BackupSupervisor:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             try:
-                # Marker, auditoría y retención de METADATA forman una única
-                # decisión durable. Ningún ZIP se borra antes de este COMMIT.
+                # Marker, audit and METADATA retention form one durable
+                # decision. No ZIP is deleted before this COMMIT.
                 db.execute(
                     "DELETE FROM pending_backups WHERE version=?", (job["version"],)
                 )
@@ -284,22 +284,22 @@ class BackupSupervisor:
             except Exception:
                 db.rollback()
                 raise
-        # Segunda fase: bajo un nuevo write-lock se revalidan referencias y solo
-        # entonces se borran ZIPs. Si el proceso muere aquí, queda como máximo un
-        # fichero huérfano que se reconciliará después; nunca metadata rota.
+        # Second phase: references are revalidated under a new write lock and only
+        # then ZIPs are deleted. If the process dies here, at most one
+        # orphan file remains for later reconciliation; metadata never becomes broken.
         try:
             self.reconcile_filesystem()
         except Exception:
             self.logger.exception(
-                "La metadata del backup v%s quedó confirmada, pero falló la "
-                "reconciliación física; se reintentará sin repetir el backup",
+                "Backup metadata for v%s was committed, but physical "
+                "reconciliation failed; it will retry without repeating the backup",
                 job["version"],
             )
 
     def terminate_process_group(self, process, sigterm_timeout=10, sigkill_timeout=10):
-        # Popen(start_new_session=True) crea una sesión cuyo PGID es el PID del
-        # líder. Conservar ese PGID permite matar descendientes aunque el líder
-        # ya haya salido y os.getpgid(pid) deje de poder resolverlo.
+        # Popen(start_new_session=True) creates a session whose PGID is the PID of the
+        # leader. Keeping that PGID allows descendants to be terminated even if the leader
+        # has already exited and os.getpgid(pid) can no longer resolve it.
         pgid = process.pid
         try:
             os.killpg(pgid, signal.SIGTERM)
@@ -310,8 +310,8 @@ class BackupSupervisor:
         except subprocess.TimeoutExpired:
             pass
 
-        # El líder puede haber terminado limpiamente mientras un nieto ignora
-        # SIGTERM. Se sondea el grupo completo antes de decidir que ha acabado.
+        # The leader may have exited cleanly while a descendant ignores
+        # SIGTERM. The whole group is polled before deciding it has stopped.
         try:
             os.killpg(pgid, 0)
         except (ProcessLookupError, PermissionError):
@@ -324,7 +324,7 @@ class BackupSupervisor:
             process.wait(timeout=sigkill_timeout)
         except subprocess.TimeoutExpired:
             self.logger.warning(
-                "El process-group de backup (pgid %s) no terminó tras SIGKILL",
+                "The backup process group (pgid %s) did not exit after SIGKILL",
                 pgid,
             )
 
@@ -358,8 +358,8 @@ class BackupSupervisor:
         if not self.command:
             if not self._warned_disabled_pending:
                 self.logger.warning(
-                    "Hay backups pendientes pero SAVE_SYNC_POST_PUBLISH_COMMAND está vacío; "
-                    "el supervisor se marcará unhealthy hasta resolver la cola"
+                    "Backups are pending but SAVE_SYNC_POST_PUBLISH_COMMAND is empty; "
+                    "the supervisor will remain unhealthy until the queue can progress"
                 )
                 self._warned_disabled_pending = True
             return False
@@ -379,7 +379,7 @@ class BackupSupervisor:
         try:
             argv = shlex.split(self.command)
             if not argv:
-                raise ValueError("backup command vacío tras parseo")
+                raise ValueError("backup command is empty after parsing")
             process = self.popen(
                 argv,
                 env=env,
@@ -392,7 +392,7 @@ class BackupSupervisor:
             self.current_process = process
         except Exception:
             self.logger.exception(
-                "No se pudo lanzar el backup externo de la versión %s", job["version"]
+                "Could not launch external backup for version %s", job["version"]
             )
             self.finalize_job(
                 job,
@@ -407,10 +407,10 @@ class BackupSupervisor:
         finally:
             self.current_process = None
         if interrupted:
-            # Reinicio controlado del supervisor: el proceso hijo ya fue
-            # terminado, pero el marcador se conserva para reintentar al volver.
+            # Controlled supervisor restart: the child process has already been
+            # completed, but the marker is preserved so it can retry after restart.
             self.logger.info(
-                "Backup v%s interrumpido por parada del supervisor; queda pendiente",
+                "Backup v%s interrupted by supervisor shutdown; it remains pending",
                 job["version"],
             )
             return True
@@ -424,7 +424,7 @@ class BackupSupervisor:
         )
         if not success:
             self.logger.warning(
-                "Backup externo v%s terminó con exit code %s%s",
+                "External backup v%s finished with exit code %s%s",
                 job["version"],
                 exit_code,
                 " (timeout)" if timed_out else "",
@@ -441,17 +441,17 @@ class BackupSupervisor:
                     self.reconcile_filesystem()
                 except Exception:
                     self.logger.exception(
-                        "No se pudo reconciliar el filesystem al arrancar; se reintentará"
+                        "Could not reconcile the filesystem at startup; it will be retried"
                     )
             while not self.stop_requested:
                 self.touch_heartbeat()
                 try:
                     worked = self.run_once()
                 except Exception:
-                    # Un fallo de auditoría/SQLite no debe destruir el único
-                    # supervisor. El marcador queda intacto por rollback y se
-                    # reintentará en la siguiente iteración.
-                    self.logger.exception("Fallo del supervisor; se reintentará")
+                    # An audit/SQLite failure must not destroy the only
+                    # supervisor. The marker remains intact after rollback and
+                    # it will retry on the next iteration.
+                    self.logger.exception("Supervisor failure; it will retry")
                     worked = False
                 if not worked:
                     self.sleep(self.poll_seconds)

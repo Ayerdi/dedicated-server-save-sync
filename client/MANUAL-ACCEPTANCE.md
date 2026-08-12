@@ -1,48 +1,40 @@
-# Aceptación manual con Palworld
+# Manual Palworld acceptance test
 
-Esta prueba debe ejecutarse en dos equipos Windows de prueba antes de publicar
-el primer release. Usa backups externos y una instancia Save Sync aislada; no
-experimentes con el único save válido.
+Run this test on two disposable/test Windows hosts before publishing a release that changes client behavior. Use independent external backups and an isolated Save Sync deployment. **Never experiment on the only valid copy of a world.**
 
-## Preparación
+## Preparation
 
-- [ ] Ambos equipos usan el mismo commit/artefacto del cliente.
-- [ ] Cada equipo tiene token propio y `ClientId` distinto.
-- [ ] La REST de Palworld escucha solo en localhost.
-- [ ] Existe una copia externa verificada del mundo.
-- [ ] Ningún `PalServer.exe` está abierto.
+- [ ] Both hosts use the exact same client artifact/commit.
+- [ ] Each host has its own token and distinct `ClientId`.
+- [ ] Palworld REST listens on localhost only.
+- [ ] A verified external copy of the world exists.
+- [ ] No `PalServer.exe` process is running.
 
-## Equipo A
+## Host A
 
-1. Ejecutar `Configurar-secretos.cmd` y `Probar-conexion.cmd`.
-2. Iniciar con `Iniciar-PalworldSync.cmd`.
-3. Confirmar que adquiere lock y selecciona el `worldGuid` esperado.
-4. Conectar un cliente del juego, realizar un cambio identificable y esperar a
-   que el juego confirme el guardado.
-5. Solicitar cierre desde el script.
-6. Confirmar que PalServer termina antes de comprimir y que el upload crea una
-   versión nueva.
-7. Verificar que no queda `pending-session.json` ni lock activo.
+1. Run `Configure-Secrets.cmd` and `Test-Connection.cmd`.
+2. Start with `Start-PalworldSync.cmd`.
+3. Confirm the client acquires the lock and selects the expected `worldGuid`.
+4. Join the game, make an identifiable change and wait for Palworld to confirm a save.
+5. Request shutdown through the client.
+6. Confirm PalServer exits before compression and the upload creates a higher version.
+7. Confirm there is no `pending-session.json` and no active lock.
 
-## Equipo B
+## Host B
 
-1. Confirmar que no puede iniciar mientras A mantiene el lock.
-2. Tras cerrar A, ejecutar conexión e inicio normales.
-3. Confirmar que descarga la versión de A y verifica SHA-256 y `worldGuid`.
-4. Arrancar Palworld y comprobar dentro del juego el cambio creado por A.
-5. Crear otro cambio, cerrar y publicar desde B.
+1. Confirm it cannot start while Host A owns the lock.
+2. After A finishes, run the normal connection/start flow.
+3. Confirm B downloads A's version and verifies SHA-256 and `worldGuid`.
+4. Start Palworld and verify A's change in-game.
+5. Make a second identifiable change, then stop and publish from B.
 
-## Recuperación y rechazo
+## Recovery and rejection cases
 
-- [ ] Simular una caída de red después de crear el ZIP: el pendiente se conserva.
-- [ ] Repetir conexión y confirmar reconciliación sin inventar `baseVersion`.
-- [ ] Configurar deliberadamente otra carpeta de mundo y comprobar que se
-  rechaza antes de publicar.
-- [ ] Restaurar administrativamente una versión en el entorno aislado y
-  confirmar que reaparece como número superior.
+- [ ] Simulate network loss after creating the local ZIP; the pending artifact must remain.
+- [ ] Retry and confirm reconciliation without inventing a new `baseVersion`.
+- [ ] Point deliberately at a different world and confirm publication is rejected.
+- [ ] Restore an old version administratively in the isolated environment and confirm restore creates a new higher version.
 
-## Evidencia que puede publicarse
+## Evidence safe to publish
 
-Registrar únicamente versiones, códigos HTTP, resultado y versión del cliente.
-No adjuntar tokens, rutas, GUID reales, nombres personales, logs completos ni
-saves. Anotar commit, fecha y `PASS/FAIL` en el release candidate.
+Record only versions, HTTP status codes, result and client/product version. Do not publish tokens, real paths, GUIDs, personal names, full logs or saves. Record commit, date and `PASS/FAIL` for the release candidate.

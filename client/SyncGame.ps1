@@ -10,26 +10,26 @@ $ErrorActionPreference = 'Stop'
 $ClientRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPath = Join-Path $ClientRoot 'config.json'
 if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
-    throw "No existe config.json. Copia config.example.json y ajústalo."
+    throw "config.json does not exist. Copy config.example.json and adjust it."
 }
 
 $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 $adapter = [string]$config.Adapter
 if ($adapter -notmatch '^[a-z0-9][a-z0-9-]{0,62}$') {
-    throw 'Adapter debe usar minúsculas, números y guiones.'
+    throw 'Adapter must use lowercase letters, numbers and hyphens.'
 }
 
 $adapterScript = Join-Path $ClientRoot ("adapters\{0}\Adapter.ps1" -f $adapter)
 $adapterManifest = Join-Path $ClientRoot ("adapters\{0}\adapter.json" -f $adapter)
 if (-not (Test-Path -LiteralPath $adapterScript -PathType Leaf)) {
-    throw "No existe el adaptador '$adapter': $adapterScript"
+    throw "Adapter '$adapter' does not exist: $adapterScript"
 }
 if (-not (Test-Path -LiteralPath $adapterManifest -PathType Leaf)) {
-    throw "El adaptador '$adapter' no contiene adapter.json."
+    throw "Adapter '$adapter' does not contain adapter.json."
 }
 $manifest = Get-Content -LiteralPath $adapterManifest -Raw | ConvertFrom-Json
 if ([string]$manifest.key -ne $adapter -or [string]$manifest.gameKey -ne [string]$config.GameKey) {
-    throw 'Adapter, adapter.json y GameKey no coinciden.'
+    throw 'Adapter, adapter.json and GameKey do not match.'
 }
 
 $parameters = @{ ClientRoot = $ClientRoot }

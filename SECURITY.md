@@ -1,61 +1,51 @@
-# Seguridad
+# Security policy
 
-## Versiones soportadas
+## Supported versions
 
-| Versión | Soporte de seguridad |
+| Version | Security support |
 |---|---|
-| `2.x` | Sí, únicamente el último release |
+| latest `2.x` release | Yes |
+| older `2.x` releases | Best effort; upgrade first |
 | `< 2.0` | No |
 
-## Reportar una vulnerabilidad
+## Reporting a vulnerability
 
-No abras una incidencia pública. Utiliza el formulario **Report a
-vulnerability** de GitHub Security Advisories:
+Do **not** open a public issue. Use GitHub's private **Report a vulnerability** flow:
 
 <https://github.com/Ayerdi/dedicated-server-save-sync/security/advisories/new>
 
-Incluye versión, impacto, pasos mínimos y mitigaciones conocidas, pero no
-adjuntes saves, tokens ni configuraciones reales. Los mantenedores confirmarán
-la recepción y coordinarán la divulgación cuando exista una corrección.
+Private Vulnerability Reporting is enabled for this public repository.
 
-Private Vulnerability Reporting se habilita **inmediatamente después** de
-cambiar el repositorio a público mediante
-`scripts/configure-public-repository.sh --apply`. Hasta completar ese paso no
-uses una incidencia pública para información sensible.
+Include the affected version, impact, minimal reproduction steps and known mitigations. Do not attach real saves, tokens or production configuration.
 
-## Datos que nunca deben versionarse
+## Data that must never be committed
 
-- `.env` real;
-- tokens `pws_...`;
-- contraseñas REST o exportaciones DPAPI;
-- `config.json` de un equipo;
-- saves, ZIP, SQLite y sidecars WAL/SHM;
-- rutas runtime renderizadas de Traefik;
-- logs, dumps o capturas del panel con tokens;
-- dominios, usuarios, GUID o rutas privadas de un despliegue real.
+- real `.env` files;
+- `pws_...` tokens;
+- REST passwords or DPAPI exports;
+- machine-specific `config.json`;
+- saves, ZIP archives, SQLite databases and WAL/SHM sidecars;
+- rendered Traefik runtime configuration;
+- logs or screenshots that contain credentials;
+- private domains, users, GUIDs or filesystem paths from a real deployment.
 
-La `.gitignore` cubre los nombres habituales, pero no reemplaza una revisión del
-diff y un escaneo de secretos.
+`.gitignore` is only a guardrail. Always review the diff and run the secret scanner.
 
-## Modelo de amenazas
+## Threat model notes
 
-- Un token robado permite operar como ese usuario hasta revocarlo.
-- Un usuario autorizado malicioso puede declarar un GUID correcto para un ZIP
-  incorrecto; el backend no interpreta `Level.sav`.
-- DPAPI protege secretos en reposo, no frente a malware bajo el mismo usuario.
-- El proxy debe eliminar cabeceras Authentik aportadas desde Internet.
-- SQLite y ZIP dependen de permisos correctos del host.
+- A stolen Bearer token has that user's privileges until it is revoked.
+- The backend validates identity metadata and ZIP structure; it does not semantically parse `Level.sav`.
+- DPAPI protects local secrets at rest, not against malware running as the same Windows user.
+- The reverse proxy must strip client-supplied Authentik identity headers.
+- SQLite and ZIP confidentiality still depend on correct host filesystem permissions.
+- The Gitleaks and repository checks reduce accidental exposure; they do not replace secret rotation after a leak.
 
-## Antes de cada publicación
+## Before a release
 
 ```bash
 bash scripts/check-repository.sh
+bash scripts/run-gitleaks.sh
 git diff --cached
 ```
 
-La CI añade Gitleaks. Si se detecta un secreto real, no basta con borrarlo en un
-commit posterior: revocarlo, rotarlo y limpiar el historial antes de publicar.
-
-También se ejecutan `pip-audit`, cobertura, un E2E local aislado y Pester en
-Windows. Ninguna prueba automatizada sustituye el backup externo ni una prueba
-real del adaptador con el servidor del juego cerrado limpiamente.
+CI also runs dependency auditing, coverage, Docker E2E, crash/restart recovery tests and Pester. Automated tests do not replace an external backup or a controlled real-game acceptance test.

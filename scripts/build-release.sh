@@ -4,10 +4,10 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${1:-}"
 [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-  printf 'Uso: %s MAJOR.MINOR.PATCH\n' "$0" >&2
+  printf 'Usage: %s MAJOR.MINOR.PATCH\n' "$0" >&2
   exit 2
 }
-[[ -f "${ROOT_DIR}/LICENSE" ]] || { printf 'Falta LICENSE.\n' >&2; exit 1; }
+[[ -f "${ROOT_DIR}/LICENSE" ]] || { printf 'LICENSE is missing.\n' >&2; exit 1; }
 
 DIST_DIR="${ROOT_DIR}/dist"
 ARCHIVE="${DIST_DIR}/dedicated-server-save-sync-client-v${VERSION}.zip"

@@ -127,7 +127,7 @@ def test_legacy_uninitialized_migration_is_idempotent_with_two_workers(tmp_path)
     with ThreadPoolExecutor(max_workers=2) as pool:
         apps = list(pool.map(lambda _: create_app(app_config(storage)), range(2)))
 
-    # Una tercera ejecución demuestra idempotencia después de la carrera inicial.
+    # A third run demonstrates idempotence after the initial race.
     restarted = create_app(app_config(storage))
     with restarted.extensions["save_sync_connect"]() as db:
         columns = {

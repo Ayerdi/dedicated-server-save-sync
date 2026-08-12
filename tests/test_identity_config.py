@@ -56,6 +56,20 @@ def test_invalid_identity_configuration_fails_closed(tmp_path, identities):
         )
 
 
+def test_legacy_spanish_secret_placeholder_still_fails_closed(tmp_path):
+    legacy_prefix = "".join(map(chr, (82, 69, 69, 77, 80, 76, 65, 90, 65, 82)))
+    legacy_placeholder = legacy_prefix + ("-x" * 20)
+    with pytest.raises(RuntimeError, match="SAVE_SYNC_PROXY_SECRET"):
+        create_app(
+            app_config(
+                tmp_path,
+                TESTING=False,
+                SAVE_SYNC_PROXY_SECRET=legacy_placeholder,
+                SAVE_SYNC_CSRF_SECRET="c" * 40,
+            )
+        )
+
+
 def test_schema_version_is_recorded_and_idempotent(tmp_path):
     config = app_config(tmp_path)
     app = create_app(config)
@@ -74,7 +88,7 @@ def test_newer_schema_is_rejected_without_downgrade(tmp_path):
     with sqlite3.connect(db_path) as db:
         db.execute("PRAGMA user_version=999")
 
-    with pytest.raises(RuntimeError, match="no se realizará downgrade"):
+    with pytest.raises(RuntimeError, match="no downgrade will be performed"):
         create_app(
             app_config(
                 tmp_path,

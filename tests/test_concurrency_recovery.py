@@ -20,12 +20,12 @@ WORLD_GUID = "A7E97BAA767DB9029EF013BB71E993A0"
 
 
 class _ThreadThatFailsToStart(threading.Thread):
-    """Simula que el SO no puede crear más threads (p. ej. límite de
-    recursos). start() lanza excepción, reproduciendo el escenario en el que
-    el supervisor de backup no puede iniciarse tras la publicación confirmada."""
+    """Simulate an OS thread-allocation failure after confirmed publication.
+    ``start()`` raises to reproduce the case where the inline test supervisor
+    cannot be created."""
 
     def start(self):
-        raise RuntimeError("no se pueden crear más threads")
+        raise RuntimeError("cannot create more threads")
 
 
 def zip_payload(marker=b"save"):
@@ -409,7 +409,7 @@ def test_post_publish_hook_runs_and_never_blocks_publication(app, monkeypatch):
 
 
 def test_post_publish_hook_with_malformed_quotes_still_returns_201(app):
-    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = 'restic backup "mal cerrado'
+    app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"] = 'restic backup "unterminated quote'
     result = publish(app, b"malformed")
     assert result["version"] == 1
     with app.test_client() as client:
@@ -491,8 +491,8 @@ def test_backup_hook_timeout_terminates_and_audits_failure(app, monkeypatch):
 
         def wait(self, timeout=None):
             self.calls += 1
-            # El proceso ignora tanto SIGTERM como SIGKILL (p. ej. un nieto
-            # zombie) para ejercer las ramas de timeout de terminate_process_group.
+            # The process ignores both SIGTERM and SIGKILL (for example, a zombie
+            # grandchild) to exercise terminate_process_group timeout branches.
             if self.calls <= 3:
                 raise subprocess.TimeoutExpired(
                     cmd=["restic"], timeout=timeout or 0
@@ -679,8 +679,8 @@ def test_database_failure_after_move_preserves_current_but_retry_must_work(app):
             assert db.execute("SELECT count(*) FROM versions").fetchone()[0] == 1
             db.execute("DROP TRIGGER fail_v2")
 
-        # Tras recrear la app (equivalente a reiniciar el proceso), el mismo lock
-        # sigue vigente y un posible fichero huérfano no debe bloquear el reintento.
+        # After recreating the app (equivalent to restarting the process), the same lock
+        # remains authoritative and a possible orphan file must not block the retry.
         restarted = create_app(
             {
                 "TESTING": True,
@@ -750,8 +750,8 @@ def test_restart_uses_persisted_lock_and_current_version(app):
 def test_post_publish_hook_thread_start_failure_never_breaks_publication(
     app, monkeypatch
 ):
-    """Thread.start() falla tras publicación confirmada: sigue 201 y se libera
-    el marcador de backup."""
+    """Thread.start() fails after confirmed publication: the request still returns
+    201 and the backup marker is released."""
     monkeypatch.setattr(threading, "Thread", _ThreadThatFailsToStart)
     monkeypatch.setattr(os, "killpg", lambda pgid, sig: None)
 
@@ -788,10 +788,10 @@ def test_post_publish_hook_thread_start_failure_never_breaks_publication(
 
 
 def test_history_delete_rejects_version_with_pending_backup(tmp_path, monkeypatch):
-    """ 🔴 #2: borrar una versión con backup en curso devuelve 409; vuelve a
-    funcionar (200) una vez el backup termina y se libera el marcador.
+    """Deleting a version with an in-progress backup returns 409 and works again
+    (200) after the backup finishes and releases the marker.
 
-    Usa una app con retención=2 (más alto que la versión publicada) para que el
+    Use retention=2 (higher than the published version count) so the
     cleanup post-backup no elimine previamente v1, dejando constar el
     comportamiento del endpoint admin frente a pending_backups."""
     blocker = Event()

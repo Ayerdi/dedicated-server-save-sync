@@ -1,107 +1,76 @@
-# Cliente Save Sync
+# Save Sync Windows client
 
-`SyncGame.ps1` es el lanzador común para Windows PowerShell 5.1. Lee `Adapter` y
-`GameKey`, comprueba el manifest y entrega el control a
-`adapters/<adapter>/Adapter.ps1`. Toda diferencia por equipo vive en
-`config.json` y en los secretos DPAPI.
+`SyncGame.ps1` is the common Windows PowerShell 5.1 launcher. It reads `Adapter` and `GameKey`, validates the adapter manifest and hands control to `adapters/<adapter>/Adapter.ps1`. Machine-specific values live only in `config.json` and DPAPI-protected secrets.
 
-> **Alcance estable:** la release de producto `v2.2.1` soporta Palworld. Las
-> abstracciones de adaptador se conservan porque forman parte de la arquitectura,
-> pero nuevos juegos y el rediseño multi-juego quedan fuera del roadmap de
-> mantenimiento de este repositorio.
+> **Stable scope:** product release `v2.2.2` supports Palworld. Adapter abstractions remain because they are part of the architecture, but new games and the future multi-game/device-sync redesign are outside this repository's maintenance roadmap.
 
-## Versiones
+## Product version vs client version
 
-Hay dos números distintos de forma deliberada:
+Two version numbers exist intentionally:
 
-- `v2.2.1`: release del **producto** (backend, cliente empaquetado, docs y
-  proceso de publicación);
-- `clientVersion=1.2.0`: versión del **adaptador/cliente Palworld** que se
-  registra en el manifest del ZIP y en mensajes de diagnóstico.
+- `v2.2.2`: product release covering backend, packaged client, docs and release process;
+- `clientVersion=1.2.0`: the Palworld adapter/client component version written to ZIP manifests and diagnostics.
 
-El backend no decide compatibilidad a partir de `clientVersion`. Para producción
-usa backend y paquete de cliente procedentes de la misma release estable del
-producto.
+The backend does not infer compatibility from `clientVersion`. In production, deploy backend and client from the **same product release**.
 
-## Instalación
+## Installation
 
-1. Descargar el ZIP y su `.sha256` desde la release estable y verificar el hash.
-2. Extraer el paquete a una ruta local estable.
-3. Copiar `config.example.json` como `config.json`.
-4. Ajustar `Adapter`, `GameKey`, `PlayerName`, `ClientId`, URL y rutas del juego.
-5. Habilitar la REST API de Palworld solo en localhost y configurar su
-   `AdminPassword`.
-6. Ejecutar `Configurar-secretos.cmd`.
-7. Ejecutar `Probar-conexion.cmd`.
+1. Download the `v2.2.2` client ZIP and its `.sha256` file from Releases.
+2. Verify the checksum before extracting it.
+3. Copy `config.example.json` to `config.json`.
+4. Set `Adapter`, `GameKey`, `PlayerName`, `ClientId`, public API URL and game paths.
+5. Enable Palworld's REST API on **localhost only** and configure its `AdminPassword`.
+6. Run `Configure-Secrets.cmd`.
+7. Run `Test-Connection.cmd`.
+8. Start sessions with `Start-PalworldSync.cmd`.
 
-No copiar `data/secrets.json` entre equipos. DPAPI lo liga al usuario y equipo
-que lo creó.
+The older `Configurar-secretos.cmd`, `Probar-conexion.cmd` and `Iniciar-PalworldSync.cmd` names remain as compatibility aliases.
 
-## Configuración
+Do not copy `data/secrets.json` between machines. DPAPI binds it to the Windows user and machine that created it.
 
-- `PlayerName`: debe coincidir con el nombre mostrado configurado en el backend.
-- `ClientId`: identificador estable y no secreto del equipo.
-- `Adapter`: carpeta de integración; la release estable incluye `palworld`.
-- `GameKey`: debe coincidir con `adapter.json` y el backend desplegado.
-- `ApiBaseUrl`: termina en `/api/games/<gameKey>` y debe usar HTTPS.
-- `PalServerRoot` y `PalServerExecutable`: instalación dedicada.
-- `SaveGamesRoot`: directorio padre de `0/<worldGuid>`.
-- `GameUserSettingsPath`: archivo que contiene `DedicatedServerName`.
-- `InitialWorldGuid`: solo para elegir el mundo de la primera subida; dejar vacío
-  después de inicializar es válido.
-- `RestApiBaseUrl`: debe apuntar a localhost.
-- `HeartbeatSeconds`: debe ser claramente menor que el TTL del backend.
-- `LocalBackupRetention`: ZIP locales conservados por el cliente.
+## Important configuration fields
 
-Los campos restantes del ejemplo pertenecen al adaptador Palworld. La
-abstracción de adaptadores se documenta como referencia técnica, no como promesa
-de soporte para otros títulos en esta release.
+- `PlayerName`: must match the display identity configured on the backend.
+- `ClientId`: stable, non-secret identifier for this PC.
+- `Adapter`: integration directory; the stable release includes `palworld`.
+- `GameKey`: must match `adapter.json` and the deployed backend.
+- `ApiBaseUrl`: ends in `/api/games/<gameKey>` and must use HTTPS in production.
+- `PalServerRoot` / `PalServerExecutable`: dedicated-server installation.
+- `SaveGamesRoot`: parent of `0/<worldGuid>`.
+- `GameUserSettingsPath`: file containing `DedicatedServerName`.
+- `InitialWorldGuid`: used only to disambiguate the first upload; it may be empty after initialization.
+- `RestApiBaseUrl`: must point to localhost.
+- `HeartbeatSeconds`: must be clearly shorter than the backend lock TTL.
+- `LocalBackupRetention`: number of local pre-session/download backup ZIPs.
 
-## Uso de Palworld
+## Normal use
 
-Ejecutar `Iniciar-PalworldSync.cmd`. No abrir `PalServer.exe` por separado.
+Launch `Start-PalworldSync.cmd`. Do not start `PalServer.exe` independently.
 
-Durante una sesión, ENTER solicita guardar, apagar y publicar. Cerrar la ventana
-o apagar el PC puede dejar una sesión pendiente; el lock remoto acabará
-caducando, pero el progreso local requerirá revisión.
+The client acquires the remote lock, downloads the authoritative version when necessary, starts PalServer and heartbeats the session. On shutdown it asks Palworld to save and stop, verifies the writer has exited, builds the ZIP and uploads it with the `baseVersion` acquired at lock time.
 
-## Recuperación
+If the client repeatedly loses remote exclusion, it stops PalServer rather than continuing without reliable ownership.
 
-Archivos bajo `data/`:
+## Recovery files
 
-- `state.json`: versión local confirmada.
-- `pending-session.json`: sesión modificada aún no confirmada.
-- `pending-uploads/`: ZIP cuya publicación no pudo confirmarse.
-- `backups/`: copias previas a descarga/sesión.
-- `logs/`: diagnóstico sin tokens ni contraseñas deliberados.
+Files under `data/` include:
 
-Si existe una sesión pendiente:
+- `state.json`: last confirmed remote version;
+- `pending-session.json`: locally modified session not yet confirmed remotely;
+- `pending-uploads/`: ZIPs whose publication could not be confirmed;
+- `backups/`: local copies taken before download/session changes;
+- `logs/`: diagnostic output designed to exclude tokens and passwords.
 
-1. no iniciar el otro equipo;
-2. consultar la versión remota;
-3. si avanzó, no subir automáticamente;
-4. conservar el ZIP y decidir manualmente qué progreso debe prevalecer;
-5. no editar `baseVersion`.
+If a pending session exists, do not start the other host. Check the current remote version, preserve the pending ZIP and never edit `baseVersion` to bypass a conflict.
 
-## Incidente corregido en 1.1
+## Multi-world safety
 
-Cuando había varios mundos locales, el cliente original buscaba cualquier
-candidato antes de descargar y abortaba por ambigüedad aunque el backend ya
-indicara el GUID correcto. La versión común prefiere el GUID remoto cuando su
-carpeta existe y no borra los otros mundos.
+When several local Palworld worlds exist, the client prefers the `worldGuid` already recorded by the backend when that folder exists. An uninitialized backend requires either `InitialWorldGuid` or one unambiguous local world. Other worlds are never deleted automatically.
 
-## Pruebas
-
-El switch interno `-LibraryOnly` carga funciones sin ejecutar el flujo. Se usa
-exclusivamente desde Pester:
+## Tests
 
 ```powershell
 Invoke-Pester -Path .\client -CI
 ```
 
-Debe complementarse con una prueba manual controlada en Windows/PalServer; la
-CI no puede demostrar el comportamiento de la REST ni la consistencia real del
-save del juego.
-
-El procedimiento de aceptación para dos equipos está en
-[MANUAL-ACCEPTANCE.md](MANUAL-ACCEPTANCE.md).
+CI cannot prove Palworld's real REST behavior or semantic world consistency. Use [MANUAL-ACCEPTANCE.md](MANUAL-ACCEPTANCE.md) for a controlled two-host regression test.

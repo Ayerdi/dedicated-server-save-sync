@@ -58,7 +58,7 @@ def test_different_save_identity_is_stable_conflict(client):
     assert response.status_code == 409
     assert response.get_json() == {
         "error": "world_guid_conflict",
-        "message": "El ZIP pertenece a un mundo de Palworld diferente.",
+        "message": "The ZIP belongs to a different Palworld world.",
         "details": {
             "identityField": "worldGuid",
             "expectedSaveIdentity": WORLD_GUID,
@@ -267,7 +267,7 @@ def test_migration_is_serialized_between_two_workers(tmp_path):
 def test_migration_fails_closed_for_initialized_legacy_installation(tmp_path):
     storage = tmp_path / "storage"
     create_legacy_database(storage / "db.sqlite3", initialized=True)
-    with pytest.raises(RuntimeError, match="sin save_identity válido"):
+    with pytest.raises(RuntimeError, match="without a valid save_identity"):
         create_app(app_config(storage))
 
 
@@ -276,7 +276,7 @@ def test_migration_fails_closed_for_orphan_legacy_history(tmp_path):
     create_legacy_database(storage / "db.sqlite3", initialized=True)
     with sqlite3.connect(storage / "db.sqlite3") as db:
         db.execute("DELETE FROM current_save")
-    with pytest.raises(RuntimeError, match="sin save_identity válido"):
+    with pytest.raises(RuntimeError, match="without a valid save_identity"):
         create_app(app_config(storage))
 
 

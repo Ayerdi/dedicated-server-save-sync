@@ -1,72 +1,37 @@
 # Dedicated Server Save Sync v2.2.1
 
-`v2.2.1` es la release de mantenimiento que cierra el hardening operativo antes de la publicación pública del repositorio.
+`v2.2.1` completed the operational hardening before the repository became public. It did not change the client synchronization protocol, save/ZIP format or SQLite schema (v3).
 
-No cambia el protocolo del cliente, el formato ZIP/save ni el esquema SQLite (permanece en v3). El cambio principal está en cómo se supervisan y retienen los backups externos.
+## Durable backup independent from Gunicorn
 
-## Backup durable independiente de Gunicorn
+- `pending_backups` became a durable SQLite queue.
+- Publishing/restoring a version and enqueueing its backup became one SQLite commit.
+- A separate `backup-supervisor` consumes the queue and runs the external hook.
+- A Gunicorn crash does not stop the backup process.
+- A supervisor crash leaves the row in SQLite for retry with **at-least-once** semantics.
+- External commands must stay in the foreground and tolerate repetition.
 
-- `pending_backups` pasa de marker efímero a cola durable en SQLite.
-- Publicar/restaurar una versión y encolar su backup forman el mismo commit SQLite.
-- Un sidecar `backup-supervisor`, independiente del proceso web, consume la cola y ejecuta el hook externo.
-- Si cae Gunicorn, el backup continúa.
-- Si cae el propio supervisor, la fila permanece y se reintenta al arrancar con semántica **at-least-once**.
-- El comando externo debe permanecer en foreground y ser idempotente o tolerar reintentos.
+## Crash safety and retention
 
-## Crash-safety y retención
+Retention uses two phases: first commit audit/result/retention metadata, then reacquire a write lock, revalidate current references and only then unlink physical ZIPs that remain unreferenced.
 
-La retención de backend y supervisor usa dos fases:
+The safe crash residue is an extra orphan ZIP, never committed SQLite metadata pointing at a ZIP deleted by a transaction that later rolled back.
 
-1. confirma en SQLite el resultado, auditoría, marker y retención de metadata;
-2. reabre un write-lock, revalida las referencias actuales y solo entonces elimina ZIPs físicos que siguen huérfanos.
+Pending backup versions remain protected even when old. `stalePending` is observability, not permission to purge the queue.
 
-Un crash tras el commit puede dejar un ZIP de más, que una reconciliación posterior elimina. No puede provocar que un rollback de SQLite deje metadata apuntando a un ZIP que ya fue borrado por la misma operación de retención.
+## Supervisor and healthcheck
 
-Las versiones con backup pendiente permanecen protegidas aunque el marker sea antiguo. `stalePending` queda como señal de observabilidad, no como permiso para borrar la cola.
+- Rejects unsupported `PRAGMA user_version` values.
+- Requires a recent heartbeat and valid schema.
+- Becomes unhealthy when work is queued but no backup command is configured.
+- Runs hooks in their own process group and escalates `SIGTERM` to `SIGKILL` on timeout/shutdown.
 
-## Supervisor y healthcheck
+## Reproducible restic
 
-- Rechaza bases cuyo `PRAGMA user_version` no coincida exactamente con el esquema soportado.
-- El healthcheck exige heartbeat reciente y esquema correcto.
-- Si existe cola pendiente pero `SAVE_SYNC_POST_PUBLISH_COMMAND` está vacío, el supervisor se marca unhealthy.
-- Los hooks se ejecutan en un process-group propio; timeout/parada escalan `SIGTERM` → `SIGKILL` sobre todo el grupo, incluso si el proceso líder ya terminó.
+Restic 0.18.0 is downloaded from official assets and verified with pinned SHA-256 for amd64/arm64. CI checks the exact version inside the image.
 
-## Restic reproducible
+## Validation
 
-Restic 0.18.0 deja de instalarse desde APT. La imagen descarga los binarios oficiales para `amd64`/`arm64`, valida SHA-256 fijados y CI comprueba que la imagen resultante expone exactamente `restic 0.18.0`.
+The hardening candidate was validated with Ruff, documentation checks, 132 Python tests with 88.38% coverage, `pip-audit`, Docker build/Compose, restic version verification, normal E2E, crash/restart E2E, Pester and full-history Gitleaks.
 
-## Despliegue y recuperación
-
-- `config/deploy.sh` exige que backend y `backup-supervisor` estén healthy antes de publicar la ruta Traefik.
-- Rollback detiene ambos servicios sin borrar datos.
-- El stack local/E2E inicializa de forma explícita los permisos del volumen compartido.
-
-## Validación
-
-El candidato que introduce este hardening se validó con:
-
-- Ruff;
-- checker de documentación;
-- **132 tests** con **88,38 %** de cobertura (mínimo 85 %);
-- `pip-audit` sin vulnerabilidades conocidas;
-- Docker Compose y Docker build;
-- comprobación de Restic 0.18.0 dentro de la imagen;
-- E2E normal;
-- E2E que mata el contenedor web durante un backup;
-- E2E que mata con SIGKILL el supervisor y exige reintento desde SQLite;
-- Pester para el cliente Windows;
-- Gitleaks sobre el historial Git.
-
-La CI de `main` posterior al merge del hardening también quedó completamente verde.
-
-## Compatibilidad
-
-No hay cambios deliberados en:
-
-- API pública de sincronización;
-- protocolo del cliente Windows;
-- formato de saves/ZIP;
-- `saveIdentity` / `worldGuid`;
-- esquema SQLite v3.
-
-El adaptador Palworld sigue identificándose internamente como `clientVersion=1.2.0`; ese número corresponde al componente Windows y es independiente de la release del producto `v2.2.1`.
+`clientVersion=1.2.0` remains the internal Palworld Windows component version and is independent from the product release number.

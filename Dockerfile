@@ -10,9 +10,9 @@ RUN useradd --system --uid 10001 --create-home savesync
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
-# Binario oficial fijado por versión y SHA-256. Se soportan las dos
-# arquitecturas de despliegue del proyecto; cualquier asset distinto hace
-# fallar el build en vez de aceptar silenciosamente otra versión de restic.
+# Official binary pinned by version and SHA-256. Both deployment
+# architectures are supported; any unexpected asset makes
+# the build fail instead of silently accepting another restic version.
 ARG RESTIC_VERSION=0.18.0
 ARG TARGETARCH
 RUN RESTIC_VERSION="${RESTIC_VERSION}" TARGETARCH="${TARGETARCH}" python - <<'PY'
@@ -49,7 +49,7 @@ with urllib.request.urlopen(request, timeout=60) as response:
     compressed = response.read()
 actual = hashlib.sha256(compressed).hexdigest()
 if actual != expected:
-    raise SystemExit(f"SHA-256 de restic inválido: {actual} != {expected}")
+    raise SystemExit(f"Invalid restic SHA-256: {actual} != {expected}")
 target = pathlib.Path("/usr/local/bin/restic")
 target.write_bytes(bz2.decompress(compressed))
 target.chmod(0o755)

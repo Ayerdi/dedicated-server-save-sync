@@ -1,30 +1,17 @@
-# Código de conducta
+# Code of Conduct
 
-Este proyecto adopta el [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
+This project follows the principles of the [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 
-## Compromiso
+## Our commitment
 
-Nos comprometemos a ofrecer una comunidad libre de acoso para todas las
-personas, independientemente de su experiencia, identidad, apariencia,
-capacidad, nacionalidad, raza, religión u orientación.
+We want a technical community where people can participate without harassment or discrimination, regardless of experience, identity, appearance, ability, nationality, race, religion or orientation.
 
-## Comportamiento esperado
+Expected behavior includes being respectful and constructive, accepting corrections and different viewpoints, focusing criticism on ideas and impact, and protecting other people's credentials, saves and personal information.
 
-- Ser respetuoso y constructivo.
-- Aceptar correcciones y puntos de vista distintos.
-- Centrarse en el impacto técnico y humano de una decisión.
-- No publicar datos personales, credenciales ni saves ajenos.
+Harassment, threats, sexualized behavior, discrimination, impersonation and disclosure of private information are not acceptable.
 
-No se toleran insultos, acoso, amenazas, sexualización, discriminación,
-suplantación ni divulgación de información privada.
+## Enforcement
 
-## Aplicación
+Maintainers may edit or remove contributions and restrict participation when necessary. Sensitive conduct reports should use the private channel described in [SECURITY.md](SECURITY.md), with the title `Conduct report`, rather than a public issue.
 
-Los mantenedores pueden editar o eliminar contribuciones y restringir la
-participación cuando sea necesario. Los incidentes sensibles pueden comunicarse
-mediante el canal privado indicado en [SECURITY.md](SECURITY.md); usa el título
-`Conduct report` y no abras una incidencia pública.
-
-Las medidas se decidirán atendiendo a contexto, gravedad y reincidencia, desde
-una advertencia privada hasta la expulsión permanente de los espacios del
-proyecto.
+Responses will consider context, severity and repeated behavior, from a private warning through permanent removal from project spaces.

@@ -1,10 +1,8 @@
-# Guía de mantenimiento para agentes y contribuidores
+# Maintainer guide
 
-Este documento resume el contexto mínimo para trabajar en la referencia estable
-de Palworld sin romper sus invariantes. `v2.2.1` está en mantenimiento; el
-rediseño multi-juego de producto se desarrolla fuera de este repositorio.
+This document is the shortest safe path into the Palworld reference implementation. `v2.2.2` is the current stable maintenance release; the broader multi-game/device-sync product is developed outside this repository.
 
-## Orden de lectura
+## Recommended reading order
 
 1. `README.md`
 2. `docs/ARCHITECTURE.md`
@@ -15,57 +13,41 @@ rediseño multi-juego de producto se desarrolla fuera de este repositorio.
 7. `client/SyncGame.ps1`
 8. `client/adapters/palworld/Adapter.ps1`
 
-`docs/ADAPTING-OTHER-GAMES.md` se conserva como referencia del diseño genérico,
-no como roadmap activo de soporte.
+`docs/ADAPTING-OTHER-GAMES.md` is a design reference, not an active support roadmap.
 
-## Invariantes que no deben romperse
+## Invariants that must not regress
 
-- Las fechas de archivo nunca son autoridad de versión.
-- Una subida requiere el `baseVersion` adquirido con el lock.
-- `saveIdentity` no se inventa ni se sustituye para forzar una publicación.
-- El proceso del juego debe estar cerrado antes de comprimir.
-- El cliente no continúa jugando si pierde la exclusión de forma persistente.
-- Los fallos conservan save, ZIP pendiente y versión vigente.
-- Los backups pendientes permanecen en SQLite y protegen su ZIP hasta un resultado final.
-- La retención confirma metadata antes de eliminar físicamente ZIPs revalidados como huérfanos.
-- Tokens, contraseñas, saves, bases de datos y configuraciones personales no se
-  versionan ni se incluyen en logs.
-- La REST local de Palworld no se expone a Internet.
+- File timestamps are never version authority.
+- An upload must use the `baseVersion` acquired with the lock.
+- `saveIdentity` is never invented or replaced to force publication.
+- The game/server writer must be stopped before the save is archived.
+- The client must not keep playing after persistent loss of remote exclusion.
+- Failures preserve the save, any pending ZIP and the current authoritative version.
+- Pending backups stay in SQLite and protect their ZIP until a final known result.
+- Retention commits metadata before physically deleting ZIPs that are revalidated as unreferenced.
+- Tokens, passwords, saves, databases and personal configuration never enter source control or public logs.
+- Palworld's local REST API is never exposed to the Internet.
 
-## Forma de trabajar
+## Working method
 
-1. Reproduce el problema con una prueba o evidencia concreta.
-2. Explica cualquier cambio de comportamiento crítico y su riesgo.
-3. Mantén compatibilidad con Windows PowerShell 5.1.
-4. Ejecuta suite Python, Pester, lint, build Docker, E2E y escaneo de secretos.
-5. Documenta migración y rollback si cambia persistencia o despliegue.
-6. Publica cambios por PR y espera CI verde para el SHA exacto.
-7. No publiques artefactos desde un árbol local sucio ni modifiques una release
-   existente para hacerla coincidir con `main`.
+1. Reproduce the problem with a test or concrete evidence.
+2. Explain any critical behavior change and its risk.
+3. Keep Windows PowerShell 5.1 compatibility.
+4. Run Python tests, Pester, lint, Docker build/E2E and secret scanning.
+5. Document migration and rollback when persistence or deployment changes.
+6. Use a PR and wait for green CI on the exact final SHA.
+7. Never publish artifacts from a dirty checkout and never rewrite an existing release to match `main`.
 
-## Alcance de mantenimiento
+## Maintenance scope
 
-Apropiado:
+Appropriate: bugs/regressions, security, Palworld compatibility, dependency/CI maintenance, documentation and small compatible operational improvements.
 
-- bugs y regresiones;
-- seguridad;
-- compatibilidad con versiones nuevas de Palworld;
-- dependencias y CI;
-- documentación;
-- pequeñas mejoras operativas compatibles con la arquitectura actual.
+Out of scope: universal save discovery, one installation managing multiple games/instances, device/cloud sync as a new product mode, a new cross-platform agent, or incompatible changes intended to turn this reference into the future general platform.
 
-Fuera de alcance:
+## Minimum delivery for a meaningful change
 
-- discovery universal de saves;
-- una única instalación con múltiples juegos/instancias;
-- un nuevo agente multiplataforma;
-- cambios incompatibles cuyo objetivo sea convertir esta referencia en la
-  futura plataforma generalista.
-
-## Entrega mínima
-
-- archivos modificados y motivo;
-- riesgos corregidos y pendientes;
-- pruebas ejecutadas con resultado real;
-- pasos de despliegue y rollback cuando apliquen;
-- cualquier desviación respecto al contrato.
+- changed files and rationale;
+- risks fixed and any remaining risks;
+- tests actually executed and their result;
+- deployment and rollback steps when relevant;
+- any intentional deviation from the documented contract.

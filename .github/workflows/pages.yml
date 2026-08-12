@@ -20,9 +20,7 @@ concurrency:
 
 jobs:
   deploy:
-    # Ni los pushes ni un dispatch manual publican contenido mientras el repo
-    # siga privado. El script de publicación solo dispara este workflow después
-    # de confirmar visibilidad PUBLIC.
+    # Never deploy Pages from a private copy/fork of the repository.
     if: github.event.repository.private == false
     environment:
       name: github-pages

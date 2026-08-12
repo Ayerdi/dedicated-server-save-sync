@@ -1,40 +1,27 @@
-# Migraciones de esquema
+# Schema migrations
 
-SQLite registra la versión mediante `PRAGMA user_version`. La versión actual usa
-el esquema `3` y aplica DDL idempotente bajo `flock` y `BEGIN IMMEDIATE` durante
-el arranque.
+SQLite stores the schema level in `PRAGMA user_version`. The current application supports schema **3** and applies idempotent DDL under `flock` and `BEGIN IMMEDIATE` during startup.
 
-## Reglas
+## Rules
 
-- Un esquema `0` compatible se normaliza a `3` después de validar columnas y
-  triggers.
-- El salto a esquema `3` incorpora `pending_backups`, que en la implementación
-  actual actúa como cola durable del supervisor externo de backup.
-- Ejecutar el arranque varias veces conserva `user_version=3`.
-- Una base con versión superior se rechaza: la aplicación nunca intenta un
-  downgrade implícito.
-- Una base Palworld Sync v1 con columna `world_guid` se rechaza y debe conservar
-  su volumen separado.
-- Las migraciones futuras deben ser incrementales, transaccionales y disponer
-  de prueba desde cada versión soportada.
+- A compatible schema `0` database is normalized to `3` after required columns and triggers are validated.
+- Schema `3` introduced `pending_backups`, which is the durable queue consumed by the external backup supervisor.
+- Repeated startup keeps `user_version=3`.
+- A database with a newer version is rejected. The application never attempts an implicit downgrade.
+- A legacy Palworld Sync v1 database with the old `world_guid` layout is rejected and must remain on a separate volume.
+- Future migrations must be incremental, transactional and tested from every supported source version.
 
-## Antes de actualizar
+## Before upgrading
 
-1. Impedir nuevas sesiones y confirmar que no existe lock activo.
-2. Confirmar que `/backup-status` no deja un trabajo incierto que se pretenda
-   descartar durante la intervención.
-3. Crear backup coherente con la SQLite Backup API, no copiando el fichero WAL
-   en ejecución.
-4. Guardar también los ZIP referenciados por `versions`, incluidos los
-   protegidos por `pending_backups`.
-5. Probar restauración del backup en otra ruta.
-6. Desplegar y comprobar `PRAGMA integrity_check` y `PRAGMA user_version`.
+1. Prevent new sessions and confirm no active lock exists.
+2. Check `/backup-status` and do not silently discard uncertain pending backup work.
+3. Create a consistent database backup with the SQLite Backup API rather than copying a live WAL database file.
+4. Back up every ZIP referenced by `versions`, including versions protected by `pending_backups`.
+5. Test restoring the backup to another path.
+6. Deploy and verify `PRAGMA integrity_check` and `PRAGMA user_version`.
 
-Consulta el comando de backup en [OPERATIONS.md](OPERATIONS.md).
+See [OPERATIONS.md](OPERATIONS.md) for backup commands and operational details.
 
 ## Rollback
 
-El rollback de imagen solo es seguro si la versión anterior admite el esquema
-actual. Si no lo admite, detener backend y supervisor y restaurar juntos el
-snapshot SQLite y sus ZIP correspondientes. Nunca reutilizar sidecars `-wal` o
-`-shm` de otra ejecución.
+Rolling back an image is safe only when the older version understands the current schema. Otherwise stop both the web backend and backup supervisor, then restore a matching SQLite snapshot and its referenced ZIP files together. Never reuse `-wal` or `-shm` sidecars from another run.

@@ -1,22 +1,22 @@
-## Qué cambia
+## What changes?
 
-<!-- Describe el cambio y el problema que resuelve. -->
+<!-- Describe the change and the problem it solves. -->
 
-## Riesgo e invariantes
+## Risk and invariants
 
-- [ ] No permite uploads sin `baseVersion` válido.
-- [ ] No debilita lock, identidad, autenticación ni publicación atómica.
-- [ ] No incluye secretos, saves ni configuración real.
-- [ ] Incluye migración y rollback si cambia persistencia o despliegue.
+- [ ] Does not allow uploads without a valid `baseVersion`.
+- [ ] Does not weaken locking, identity validation, authentication or atomic publication.
+- [ ] Does not include secrets, saves or real deployment configuration.
+- [ ] Includes migration and rollback notes if persistence or deployment changes.
 
-## Verificación
+## Verification
 
-- [ ] `ruff check save_sync tests wsgi.py`
+- [ ] `ruff check save_sync tests wsgi.py scripts/check-docs.py`
 - [ ] `python -m pytest -q`
 - [ ] `pip-audit -r requirements.txt --progress-spinner=off`
 - [ ] `bash scripts/local-e2e.sh`
-- [ ] Pester, si cambia `client/`
+- [ ] Pester when `client/` changes
 
-## Documentación
+## Documentation
 
-<!-- Indica los documentos actualizados o explica por qué no aplica. -->
+<!-- List updated docs or explain why no documentation change is needed. -->

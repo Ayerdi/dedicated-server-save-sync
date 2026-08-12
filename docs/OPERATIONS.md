@@ -1,252 +1,117 @@
-# Despliegue y operación
+# Deployment and operations
 
-> **Ámbito estable:** el repositorio se mantiene como referencia de Palworld.
-> Las variables genéricas y el aislamiento por `gameKey` forman parte de la
-> arquitectura existente; las notas sobre otros juegos son referencia técnica y
-> no una promesa de soporte ni un roadmap activo.
+> **Stable scope:** this repository is maintained as the Palworld reference implementation. Generic `gameKey` primitives remain part of the existing architecture, but other games are not promised support here.
 
-## Preparación
+## Production preparation
 
-1. Crear una red Docker compartida con Traefik si no existe:
+1. Create the shared Docker network used by Traefik if it does not already exist:
 
    ```bash
    docker network create traefik_proxy
    ```
 
-2. Copiar `.env.example` a `.env` o ejecutar:
+2. Generate `.env` with:
 
    ```bash
    config/deploy.sh --init-env
    ```
 
-3. Revisar dominio, rutas, red, URL ForwardAuth e identidades.
-4. Crear la ruta host de almacenamiento; el despliegue ajustará propietario y
-   permisos mediante un contenedor efímero limitado.
-5. Verificar que Traefik y el outpost Authentik comparten la red configurada.
+3. Review domain, paths, Docker network, ForwardAuth URL and user identities.
+4. Create a private host storage path. The deployment helper adjusts ownership/permissions using a constrained ephemeral container.
+5. Confirm Traefik and the Authentik outpost share the configured network.
 
-Si solo se necesita la API Bearer, usa `SAVE_SYNC_PANEL_MODE=disabled`: se
-renderiza una ruta sin panel ni ForwardAuth. No se crea un panel anónimo.
+For Bearer-API-only deployments, set `SAVE_SYNC_PANEL_MODE=disabled`. This disables the browser panel rather than exposing an anonymous panel.
 
-No usar almacenamiento NFS/SMB para SQLite. No situar el volumen dentro del
-document root del servidor web.
+**Do not place SQLite on NFS/SMB and do not put the storage volume under a web document root.**
 
-Save Sync v2 no debe apuntarse directamente a una base Palworld Sync v1: aquella
-tabla exige `world_guid` en cada inserción y no representa el contrato genérico.
-El arranque lo detecta y falla de forma explícita. Mantener el servicio v1
-existente o inicializar v2 con otro volumen; cualquier importación futura debe
-ser una operación administrativa diseñada y probada, no una copia de SQLite.
+Save Sync v2 must not be pointed directly at a legacy Palworld Sync v1 database. The application detects the incompatible layout and fails explicitly; keep the old service/volume or initialize v2 separately.
 
-## Variables
+## Important environment variables
 
-| Variable | Propósito |
+| Variable | Purpose |
 |---|---|
-| `SAVE_SYNC_GAME_KEY` | Identificador del adaptador/despliegue |
-| `SAVE_SYNC_GAME_CONFIG_PATH` | JSON del juego dentro del contenedor |
-| `SAVE_SYNC_CONTAINER_NAME` | Nombre único del backend; el deploy lo deriva del juego |
-| `SAVE_SYNC_BACKUP_CONTAINER_NAME` | Nombre único del supervisor; el deploy lo deriva del juego |
-| `SAVE_SYNC_HOST_STORAGE_PATH` | Directorio privado absoluto del host |
-| `SAVE_SYNC_STORAGE_PATH` | Montaje interno, normalmente `/data/save-sync` |
-| `SAVE_SYNC_DB_PATH` | SQLite dentro del montaje |
-| `SAVE_SYNC_PUBLIC_HOST` | Host de las reglas Traefik |
-| `SAVE_SYNC_PUBLIC_BASE_URL` | URL HTTPS utilizada por verificación |
-| `SAVE_SYNC_PUBLIC_ROOT` | Árbol público que el almacenamiento no puede ocupar |
-| `SAVE_SYNC_TRAEFIK_DYNAMIC_DIR` | Directorio dinámico de Traefik en el host |
-| `SAVE_SYNC_PROXY_NETWORK` | Red Docker externa compartida |
-| `SAVE_SYNC_AUTHENTIK_FORWARD_AUTH_URL` | Endpoint interno ForwardAuth |
-| `SAVE_SYNC_PANEL_MODE` | `authentik` o `disabled` |
-| `SAVE_SYNC_TRAEFIK_CERT_RESOLVER` | Resolver TLS existente en Traefik |
-| `SAVE_SYNC_WEB_USERS` | Allowlist `usuario:rol` |
-| `SAVE_SYNC_USER_IDENTITIES_JSON` | Display names y slots de retención |
-| `SAVE_SYNC_MAX_UPLOAD_SIZE` | Tamaño ZIP máximo |
-| `SAVE_SYNC_LOCK_TTL_SECONDS` | TTL del lock, 300 por defecto |
-| `SAVE_SYNC_HEARTBEAT_INTERVAL_SECONDS` | Intervalo recomendado, 60 |
-| `SAVE_SYNC_RETENTION_PER_SLOT` | Versiones por slot (por defecto 1) |
-| `SAVE_SYNC_POST_PUBLISH_COMMAND` | Comando de backup consumido por el supervisor durable |
-| `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS` | Timeout de cada intento (por defecto 1800) |
-| `SAVE_SYNC_BACKUP_POLL_SECONDS` | Sondeo de la cola SQLite (por defecto 1) |
-| `SAVE_SYNC_PROXY_SECRET` | Cabecera interna proxy/backend |
-| `SAVE_SYNC_CSRF_SECRET` | Firma CSRF del panel |
+| `SAVE_SYNC_GAME_KEY` | Adapter/deployment key |
+| `SAVE_SYNC_GAME_CONFIG_PATH` | Game descriptor inside the container |
+| `SAVE_SYNC_CONTAINER_NAME` | Unique web-backend container name |
+| `SAVE_SYNC_BACKUP_CONTAINER_NAME` | Unique backup-supervisor container name |
+| `SAVE_SYNC_HOST_STORAGE_PATH` | Private absolute storage directory on the host |
+| `SAVE_SYNC_STORAGE_PATH` | Internal mount, normally `/data/save-sync` |
+| `SAVE_SYNC_DB_PATH` | SQLite database inside the mount |
+| `SAVE_SYNC_PUBLIC_HOST` | Traefik host rule |
+| `SAVE_SYNC_PUBLIC_BASE_URL` | HTTPS URL used by verification |
+| `SAVE_SYNC_PUBLIC_ROOT` | Public tree that storage must never overlap |
+| `SAVE_SYNC_PROXY_NETWORK` | External Docker network shared with Traefik |
+| `SAVE_SYNC_AUTHENTIK_FORWARD_AUTH_URL` | Internal ForwardAuth endpoint |
+| `SAVE_SYNC_PANEL_MODE` | `authentik` or `disabled` |
+| `SAVE_SYNC_TRAEFIK_CERT_RESOLVER` | Existing Traefik TLS resolver |
+| `SAVE_SYNC_WEB_USERS` | `username:role` allowlist |
+| `SAVE_SYNC_USER_IDENTITIES_JSON` | Display names and retention slots |
+| `SAVE_SYNC_MAX_UPLOAD_SIZE` | Maximum ZIP size |
+| `SAVE_SYNC_LOCK_TTL_SECONDS` | Lock TTL; default 300 |
+| `SAVE_SYNC_HEARTBEAT_INTERVAL_SECONDS` | Recommended client heartbeat; default 60 |
+| `SAVE_SYNC_RETENTION_PER_SLOT` | Versions retained per slot; default 1 |
+| `SAVE_SYNC_POST_PUBLISH_COMMAND` | Backup command consumed by the durable supervisor |
+| `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS` | Timeout for one attempt; default 1800 |
+| `SAVE_SYNC_BACKUP_POLL_SECONDS` | SQLite queue polling interval; default 1 |
+| `SAVE_SYNC_PROXY_SECRET` | Internal proxy/backend secret |
+| `SAVE_SYNC_CSRF_SECRET` | Panel CSRF signing secret |
 
-Los dos últimos valores deben ser independientes, aleatorios y tener al menos
-32 caracteres. No deben aparecer en Traefik estático, logs o Git.
+The two final secrets must be independent, random values of at least 32 characters and must never appear in logs or Git.
 
-## Retención y backup externo durable
+## Durable external backup and retention
 
-Cada usuario se asocia a un `slot` mediante
-`SAVE_SYNC_USER_IDENTITIES_JSON`. `SAVE_SYNC_RETENTION_PER_SLOT` controla
-cuántas versiones recientes se conservan por slot (por defecto 1). Con dos
-slots y retención 1, el máximo normal son dos ZIP; con retención 5, hasta
-diez. Mientras exista un backup pendiente pueden conservarse temporalmente más
-versiones: **la seguridad del backup tiene prioridad sobre el límite de
-retención**.
+Publication and queue insertion are a single SQLite transaction. Gunicorn does not launch the external command.
 
-La ejecución del backup no pertenece a Gunicorn. Upload y restore hacen una
-única transacción SQLite que publica la versión y, si
-`SAVE_SYNC_POST_PUBLISH_COMMAND` está configurado, inserta su fila en
-`pending_backups`. Esa tabla es una **cola durable**, no un marker efímero. La
-respuesta HTTP puede terminar y cualquier worker web puede morir sin perder el
-trabajo pendiente.
+The `backup-supervisor` service:
 
-El servicio Compose `backup-supervisor` comparte el mismo volumen privado y es
-el único proceso que consume esa cola en producción. Para cada intento:
+1. claims a pending version and refreshes `started_at`;
+2. audits `backup_hook_started`;
+3. runs `SAVE_SYNC_POST_PUBLISH_COMMAND` in an isolated process group with `SAVE_SYNC_PUBLISHED_VERSION`, `SAVE_SYNC_PUBLISHED_PATH`, `SAVE_SYNC_PUBLISHED_IDENTITY` and the timeout in its environment;
+4. terminates the whole process group on timeout;
+5. transactionally records the final result, removes the queue row and commits retention **metadata**;
+6. revalidates current references in a second phase before unlinking obsolete ZIP files.
 
-1. reclama la versión pendiente y refresca `started_at`;
-2. audita `backup_hook_started`;
-3. ejecuta `SAVE_SYNC_POST_PUBLISH_COMMAND` en un process-group aislado con:
-   `SAVE_SYNC_PUBLISHED_VERSION`, `SAVE_SYNC_PUBLISHED_PATH`,
-   `SAVE_SYNC_PUBLISHED_IDENTITY` y
-   `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`;
-4. aplica el timeout configurado y termina el grupo con SIGTERM/SIGKILL si hace
-   falta;
-5. en una única transacción, elimina la fila, audita
-   `backup_hook_completed`/`backup_hook_failed`, aplica la retención de
-   **metadata** y confirma SQLite;
-6. en una segunda fase con un nuevo write-lock, vuelve a consultar las
-   referencias vigentes y elimina únicamente ZIPs que sigan huérfanos.
+Pending versions are protected beyond the normal retention limit. This is intentional: **backup safety wins over the configured count**.
 
-Separar metadata y borrado físico evita una ventana de crash peligrosa: ningún
-ZIP se elimina antes del `COMMIT` que deja de referenciarlo. Si el proceso muere
-o el filesystem falla durante la segunda fase, puede quedar temporalmente un
-ZIP huérfano, pero nunca metadata confirmada apuntando a un ZIP eliminado por
-una transacción que después hizo rollback. El backend web usa la misma estrategia
-de dos fases para su cleanup de retención.
+The backup command must stay in the **foreground** until the real backup has finished. Do not hide the actual work behind `&`, `nohup`, another daemon or any wrapper that exits early.
 
-La finalización es **at-least-once**. Si el supervisor o el contenedor mueren
-antes de confirmar esa transacción, la fila SQLite permanece y se vuelve a
-intentar tras el reinicio. Si una parada controlada llega durante un backup, el
-supervisor termina el hijo y conserva igualmente la fila. Por ello el comando
-de backup debe ser idempotente o tolerar repetición, como `restic backup`.
+The supervisor provides **at-least-once** execution after uncertain crashes. Use an idempotent command or one that safely tolerates repetition, such as `restic backup`.
 
-`SAVE_SYNC_POST_PUBLISH_COMMAND` debe permanecer **en primer plano** hasta que
-el intento de backup haya terminado definitivamente. No uses un wrapper que
-lance el backup con `&`, `nohup`, un daemon externo o cualquier mecanismo que
-haga salir al proceso supervisado antes que el trabajo real. El supervisor
-puede aplicar timeout, SIGTERM/SIGKILL y determinar el resultado únicamente
-mientras el proceso real permanezca en el process-group que inició.
+A known non-zero exit code or observed timeout is recorded as a final failed attempt. An uncertain crash before that result reaches SQLite is retried.
 
-Un exit code distinto de cero o un timeout ya observado sí se registra como
-fallo final de ese intento y libera la fila: no se reintenta indefinidamente un
-comando que terminó de forma conocida. Un crash antes de poder registrar el
-resultado sí provoca retry porque el sistema no puede saber si el destino
-externo llegó a recibir el snapshot.
+### Restic build
 
-Los pending **no se purgan por edad**. `stalePending` en `/backup-status` es una
-señal de observabilidad que indica que la fila lleva más de `timeout + 60s`, no
-un permiso para que retención borre el ZIP. Esta decisión evita pérdida
-silenciosa si el supervisor permanece caído durante horas o días.
+The image includes **restic 0.18.0** from official release assets, pinned by version and SHA-256 for both `amd64` and `arm64`. CI verifies the installed binary. It is deliberately not installed from an unpinned OS package repository.
 
-### Restic reproducible
-
-La imagen incluye **Restic 0.18.0** desde los assets oficiales, fijado por
-versión y SHA-256 para `amd64` y `arm64`. El build falla si el asset no coincide
-y CI vuelve a comprobar `restic version` dentro de la imagen. No se usa
-`apt install restic`, por lo que reconstruir la misma revisión no acepta de
-forma silenciosa otra versión del binario.
-
-Configura `RESTIC_REPOSITORY` y `RESTIC_PASSWORD` (o el mecanismo equivalente)
-como secretos del despliegue. El cache se dirige a
-`RESTIC_CACHE_DIR=/data/save-sync/temporary`. Excluye ese directorio del backup:
+Example:
 
 ```dotenv
 SAVE_SYNC_POST_PUBLISH_COMMAND=restic backup /data/save-sync --exclude /data/save-sync/temporary
 ```
 
-### Operar el supervisor
+Configure the restic repository/password through deployment secrets. The cache lives under `/data/save-sync/temporary` and should be excluded.
 
-Estado y logs:
+### Operating the supervisor
 
 ```bash
 docker compose ps backup-supervisor
 docker compose logs --tail=100 backup-supervisor
 ```
 
-Su healthcheck exige una heartbeat reciente, `PRAGMA user_version` exactamente
-igual al esquema que soporta el binario y acceso a las tablas requeridas. Si
-existe trabajo en `pending_backups` pero `SAVE_SYNC_POST_PUBLISH_COMMAND` está
-vacío, el supervisor se marca **unhealthy** porque esa cola no puede progresar.
-`config/deploy.sh` no publica la ruta Traefik hasta que **backend y supervisor**
-están healthy.
+The supervisor healthcheck verifies a recent heartbeat, exactly the supported SQLite schema and access to required tables. If work is pending while `SAVE_SYNC_POST_PUBLISH_COMMAND` is empty, the service becomes unhealthy because the queue cannot make progress.
 
-Si se desea desactivar voluntariamente el backup, comprueba antes
-`/backup-status`. Una fila pendiente se conserva aunque posteriormente se vacíe
-el comando: resuelve el backup o decide administrativamente qué hacer con esa
-versión antes de retirar definitivamente el supervisor. No borres
-`pending_backups` a mano como procedimiento normal.
+Do not manually delete `pending_backups` as normal recovery. Fix the supervisor/backup command or make an explicit administrative decision about the protected version.
 
-> **Coherencia del backup:** el supervisor protege el ZIP publicado de la
-> retención mientras el backup lo necesita, pero `restic backup
-> /data/save-sync` no crea por sí solo un snapshot transaccional de SQLite. Con
-> `journal_mode=WAL` y uploads concurrentes, para un DR completo de la base
-> combine restic con la [SQLite Backup API](https://www.sqlite.org/backupapi.html)
-> o suspenda el servicio durante el backup del volumen. El caso fuerte
-> garantizado por Save Sync es la integridad del **ZIP publicado** individual,
-> que es inmutable tras el commit.
+### Database backup consistency
 
-## Despliegue
+Backing up the immutable published ZIP is strong and straightforward. Backing up a live SQLite WAL directory with `restic backup /data/save-sync` is **not** automatically a transactionally consistent database snapshot.
+
+For disaster recovery of SQLite itself, use the SQLite Backup API or stop the service during the volume backup. Example:
 
 ```bash
-config/deploy.sh
-```
-
-El script valida `.env`, renderiza la ruta Traefik privada, ejecuta
-`docker compose config`, construye, prepara el almacenamiento y levanta el
-backend junto al supervisor durable. Antes de publicar la ruta mediante rename
-verifica:
-
-- backend healthy;
-- `backup-supervisor` healthy;
-- ausencia de puertos host públicos no previstos;
-- API anónima `401`;
-- panel anónimo redirigido al login.
-
-En modo `disabled` verifica API y stack, y omite deliberadamente la ruta del
-panel. La administración sigue disponible por endpoints Bearer con un token de
-rol `admin`.
-
-El script valida que `SAVE_SYNC_GAME_KEY` coincida con
-`config/games/<gameKey>.json`. Los nombres de proyecto, backend, supervisor,
-alias de red y ruta Traefik incorporan el juego para no colisionar.
-
-### Referencia: aislamiento de otra instancia de juego
-
-Esta sección documenta la capacidad arquitectónica heredada; **no convierte
-`example-game` ni otros títulos en integraciones soportadas**. Para
-experimentación técnica, otro checkout/directorio debe usar `.env`, volumen y
-proyecto Compose independientes, por ejemplo:
-
-```dotenv
-SAVE_SYNC_GAME_KEY=example-game
-SAVE_SYNC_HOST_STORAGE_PATH=/srv/save-sync/example-game
-SAVE_SYNC_COMPOSE_PROJECT=save-sync-example-game
-```
-
-También requeriría `config/games/example-game.json` y un adaptador probado. No
-compartir base de datos ni directorio de almacenamiento entre juegos. Consulta
-[ADAPTING-OTHER-GAMES.md](ADAPTING-OTHER-GAMES.md) como referencia de diseño.
-
-Para una validación sin infraestructura externa consulta
-[LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md). Ese modo enlaza solo localhost y
-no debe exponerse a Internet.
-
-## Primer token
-
-La opción preferida es acceder al panel como administrador y crear un token por
-equipo. El valor plano se muestra una sola vez.
-
-Como bootstrap controlado puede definirse temporalmente
-`SAVE_SYNC_BOOTSTRAP_TOKENS_JSON`. Debe retirarse del entorno después del primer
-arranque. SQLite solo guarda SHA-256, pero el `.env` sí contendría el valor plano
-mientras la variable exista.
-
-## Backup coherente de SQLite
-
-No copiar directamente una base WAL en ejecución. Usar la SQLite Backup API:
-
-```bash
-python3 - /ruta/save-sync.sqlite3 /ruta/backup.sqlite3 <<'PY'
+python3 - /path/save-sync.sqlite3 /path/backup.sqlite3 <<'PY'
 import sqlite3
 import sys
-
 source, target = sys.argv[1:]
 with sqlite3.connect(source) as src, sqlite3.connect(target) as dst:
     src.backup(dst)
@@ -254,65 +119,75 @@ print(sqlite3.connect(target).execute("PRAGMA integrity_check").fetchone()[0])
 PY
 ```
 
-Guardar el backup fuera del volumen servido y con modo `0600`.
+Store the resulting backup outside public storage with mode `0600`.
 
-## Rollback de despliegue
+## Deployment
+
+```bash
+config/deploy.sh
+```
+
+The script validates `.env`, renders the private Traefik route, runs `docker compose config`, builds the image, prepares storage and starts both backend and durable supervisor. Before publishing the route it verifies:
+
+- backend healthy;
+- `backup-supervisor` healthy;
+- no unexpected public host ports;
+- anonymous API returns `401`;
+- anonymous panel redirects to login when the panel is enabled.
+
+The route is published only after those checks pass.
+
+For an isolated local validation, use [LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md).
+
+## First API token
+
+The preferred bootstrap is to sign into the protected panel as an administrator and create one token per machine. Plaintext is shown once.
+
+`SAVE_SYNC_BOOTSTRAP_TOKENS_JSON` exists for controlled initial bootstrap only. Remove it from the environment after initialization; SQLite stores token hashes but `.env` contains plaintext while the bootstrap variable remains.
+
+## Rollback
 
 ```bash
 config/rollback.sh
 ```
 
-Restaura la ruta Traefik anterior si existe y detiene backend y supervisor sin
-borrar datos. Este script no revierte automáticamente cambios de esquema.
+Rollback restores the previous Traefik route when available and stops both backend and supervisor without deleting data. It does not automatically downgrade a database schema.
 
-Para volver a una imagen incompatible con el esquema:
+To restore an incompatible older image:
 
-1. crear un backup coherente del estado actual;
-2. retirar la ruta;
-3. detener el stack;
-4. mover fuera de la ruta live la base y sus sidecars `-wal`/`-shm`;
-5. restaurar el snapshot mediante SQLite Backup API hacia un temporal del mismo
-   filesystem, hacer `fsync` y publicar con `os.replace`;
-6. no copiar sidecars del snapshot ni reutilizar WAL antiguos;
-7. arrancar la imagen anterior y verificar antes de reabrir la ruta.
+1. make a consistent backup of current state;
+2. remove the public route;
+3. stop the stack;
+4. move the live database and `-wal`/`-shm` sidecars out of the way;
+5. restore a matching SQLite snapshot to a temporary file on the same filesystem, fsync it and publish it atomically;
+6. do not reuse WAL sidecars from another run;
+7. start the older image and verify it before reopening the route.
 
-## Incidentes frecuentes
+## Common incidents
 
-### Supervisor de backup degradado
+### Backup supervisor is degraded
 
-Si `/backup-status` muestra `pending` o `stalePending` durante más tiempo del
-esperado, revisa primero:
+If `/backup-status` remains `pending` or `stalePending` unexpectedly:
 
 ```bash
 docker compose ps backup-supervisor
 docker compose logs --tail=200 backup-supervisor
 ```
 
-No elimines la versión pendiente ni su ZIP. Tras corregir el contenedor, las
-filas que no tengan un resultado final conocido se reclamarán automáticamente.
-Si el hook devuelve un fallo explícito, aparecerá `backup_hook_failed` y el
-marker se liberará porque el resultado ya es conocido.
+Do not delete the pending ZIP. Once the supervisor is healthy again, work with no known final result is reclaimed automatically.
 
-### Lock tras caída del PC
+### Lock remains after a host crash
 
-Esperar el TTL y consultar `status`. Si sigue bloqueado por un problema de
-reloj/estado, un administrador puede usar `force-unlock` dejando motivo en la
-auditoría. No forzar mientras el otro servidor pueda seguir ejecutándose.
+Wait for the TTL and check `status`. If a clock/state problem keeps the lock around, an administrator may use `force-unlock` with an audited reason. Never force-unlock while the other server might still be running.
 
-### Upload sin respuesta
+### Upload response was lost
 
-El cliente consulta `status` y reconcilia por versión, SHA-256, identidad y actor. Si
-no puede confirmar, conserva el ZIP en `client/data/pending-uploads` y mantiene
-`pending-session.json`. No cambiar manualmente `baseVersion`.
+The Windows client reconciles using remote version, SHA-256, identity and actor. If it cannot prove publication, it preserves the ZIP under `client/data/pending-uploads` and keeps `pending-session.json`. Never edit `baseVersion` manually.
 
-### Varios mundos locales
+### Several local worlds exist
 
-El cliente prefiere el GUID remoto si su carpeta existe. En una inicialización
-vacía debe configurarse `InitialWorldGuid` o dejar un único mundo inequívoco. No
-borrar mundos locales automáticamente.
+The Palworld adapter prefers the remote `worldGuid` when its folder exists. During first initialization, configure `InitialWorldGuid` or leave exactly one unambiguous candidate. Other local worlds are not deleted automatically.
 
-### Heartbeat degradado
+### Heartbeat is degraded
 
-Tras tres fallos el cliente cierra PalServer y no publica automáticamente. El
-save local queda pendiente para revisión. Esta decisión evita continuar jugando
-sin exclusión fiable.
+After repeated failures the client stops PalServer and does not automatically publish uncertain progress. This deliberately avoids continuing a game session without reliable exclusion.

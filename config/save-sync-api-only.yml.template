@@ -1,5 +1,5 @@
-# Ruta Traefik para una instalación sin panel web ni ForwardAuth.
-# La API continúa protegida por HTTPS y tokens Bearer independientes.
+# Traefik route for an installation without the web panel or ForwardAuth.
+# The API remains protected by HTTPS and independent Bearer tokens.
 http:
   middlewares:
     save-sync-__SAVE_SYNC_GAME_KEY__-clear-untrusted-auth:

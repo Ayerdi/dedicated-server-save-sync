@@ -20,7 +20,7 @@ for raw in path.read_text(encoding="utf-8").splitlines():
 PY
 }
 
-[[ -f "${PROJECT_DIR}/.env" ]] || { echo "Falta .env" >&2; exit 1; }
+[[ -f "${PROJECT_DIR}/.env" ]] || { echo "Missing .env" >&2; exit 1; }
 GAME_KEY="${SAVE_SYNC_GAME_KEY:-$(env_value SAVE_SYNC_GAME_KEY)}"
 TRAEFIK_DYNAMIC_DIR="${SAVE_SYNC_TRAEFIK_DYNAMIC_DIR:-$(env_value SAVE_SYNC_TRAEFIK_DYNAMIC_DIR)}"
 [[ "${GAME_KEY}" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || exit 2
@@ -42,16 +42,16 @@ if [[ -f "${PREVIOUS_ROUTE}" ]]; then
   trap 'rm -f -- "${route_tmp:-}"' EXIT
   install -m 0600 "${PREVIOUS_ROUTE}" "${route_tmp}"
   mv -f -- "${route_tmp}" "${TRAEFIK_ROUTE}"
-  log "Restaurada la configuracion Traefik anterior."
+  log "Restored the previous Traefik configuration."
 elif [[ -f "${TRAEFIK_ROUTE}" ]]; then
   disabled_route="${RUNTIME_DIR}/save-sync-${GAME_KEY}.disabled.$(date -u +%Y%m%dT%H%M%SZ).yml"
   mv -- "${TRAEFIK_ROUTE}" "${disabled_route}"
   chmod 0600 "${disabled_route}"
-  log "Ruta de ${GAME_KEY} retirada; el fichero queda conservado fuera del directorio dinamico."
+  log "Removed the ${GAME_KEY} route; the file is preserved outside the dynamic directory."
 else
-  log "No habia una ruta de ${GAME_KEY} publicada."
+  log "There was no published ${GAME_KEY} route."
 fi
 
 cd "${PROJECT_DIR}"
 docker compose -p "${COMPOSE_PROJECT}" down --remove-orphans
-log "Backend y supervisor detenidos sin eliminar volumenes ni datos; Traefik no se ha reiniciado."
+log "Backend and supervisor stopped without deleting volumes or data; Traefik was not restarted."

@@ -7,24 +7,24 @@ VERSION="${1:-}"
 APPLY="${2:-}"
 
 if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || "${APPLY}" != "--apply" || $# -ne 2 ]]; then
-  printf 'Uso: %s MAJOR.MINOR.PATCH --apply\n' "$0" >&2
+  printf 'Usage: %s MAJOR.MINOR.PATCH --apply\n' "$0" >&2
   exit 2
 fi
 
-command -v gh >/dev/null || { printf 'Falta GitHub CLI (gh).\n' >&2; exit 1; }
-command -v git >/dev/null || { printf 'Falta git.\n' >&2; exit 1; }
+command -v gh >/dev/null || { printf 'GitHub CLI (gh) is required.\n' >&2; exit 1; }
+command -v git >/dev/null || { printf 'git is required.\n' >&2; exit 1; }
 cd "${ROOT_DIR}"
 
 gh auth status >/dev/null 2>&1 || {
-  printf 'GitHub CLI no tiene una sesión válida. Ejecuta gh auth login.\n' >&2
+  printf 'GitHub CLI has no valid session. Run gh auth login.\n' >&2
   exit 1
 }
 [[ -z "$(git status --short)" ]] || {
-  printf 'El árbol Git debe estar limpio antes de publicar una release.\n' >&2
+  printf 'The Git tree must be clean before publishing a release.\n' >&2
   exit 1
 }
 [[ "$(git branch --show-current)" == "main" ]] || {
-  printf 'Las releases estables solo se publican desde main.\n' >&2
+  printf 'Stable releases can only be published from main.\n' >&2
   exit 1
 }
 
@@ -32,7 +32,7 @@ git fetch --quiet origin main --tags
 head_sha="$(git rev-parse HEAD)"
 remote_sha="$(git rev-parse origin/main)"
 if [[ "${head_sha}" != "${remote_sha}" ]]; then
-  printf 'HEAD no coincide con origin/main. Actualiza el checkout.\n' >&2
+  printf 'HEAD does not match origin/main. Update the checkout.\n' >&2
   exit 1
 fi
 
@@ -40,28 +40,28 @@ ci_state="$(gh run list --repo "${REPOSITORY}" --workflow ci.yml --branch main -
   --json headSha,status,conclusion \
   --jq '.[0] | (.headSha // "") + ":" + (.status // "") + ":" + (.conclusion // "")')"
 if [[ "${ci_state}" != "${head_sha}:completed:success" ]]; then
-  printf 'La CI de main no está verde para HEAD %s (%s).\n' \
-    "${head_sha}" "${ci_state:-sin ejecución}" >&2
+  printf 'Main CI is not green for HEAD %s (%s).\n' \
+    "${head_sha}" "${ci_state:-no run}" >&2
   exit 1
 fi
 
 notes="docs/RELEASE-NOTES-v${VERSION}.md"
 [[ -f "${notes}" ]] || {
-  printf 'Faltan las notas versionadas: %s\n' "${notes}" >&2
+  printf 'Versioned release notes are missing: %s\n' "${notes}" >&2
   exit 1
 }
 grep -Fq "## ${VERSION}" CHANGELOG.md || {
-  printf 'CHANGELOG.md no contiene una sección ## %s.\n' "${VERSION}" >&2
+  printf 'CHANGELOG.md does not contain a ## section for %s.\n' "${VERSION}" >&2
   exit 1
 }
 
 if gh release view "v${VERSION}" --repo "${REPOSITORY}" >/dev/null 2>&1; then
-  printf 'La release v%s ya existe; no se sobrescribe.\n' "${VERSION}" >&2
+  printf 'Release v%s already exists; it will not be overwritten.\n' "${VERSION}" >&2
   exit 1
 fi
 if git show-ref --verify --quiet "refs/tags/v${VERSION}" || \
    git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
-  printf 'El tag v%s ya existe; revísalo manualmente antes de publicar.\n' "${VERSION}" >&2
+  printf 'Tag v%s already exists; review it manually before publishing.\n' "${VERSION}" >&2
   exit 1
 fi
 
@@ -91,12 +91,12 @@ gh release create "v${VERSION}" \
 uploaded_digest="$(gh api "repos/${REPOSITORY}/releases/tags/v${VERSION}" \
   --jq ".assets[] | select(.name == \"$(basename "${archive}")\") | (.digest // \"\")")"
 if [[ "${uploaded_digest}" != "sha256:${second}" ]]; then
-  printf 'ATENCIÓN: GitHub devolvió digest inesperado para el ZIP: %s\n' \
-    "${uploaded_digest:-vacío}" >&2
-  printf 'La release existe y debe revisarse manualmente antes de anunciarla.\n' >&2
+  printf 'WARNING: GitHub returned an unexpected ZIP digest: %s\n' \
+    "${uploaded_digest:-empty}" >&2
+  printf 'The release exists and must be reviewed manually before announcing it.\n' >&2
   exit 1
 fi
 
-printf 'Release v%s publicada desde %s tras doble build reproducible.\n' \
+printf 'Release v%s published from %s after two reproducible builds.\n' \
   "${VERSION}" "${head_sha}"
-printf 'Digest publicado: %s\n' "${uploaded_digest}"
+printf 'Published digest: %s\n' "${uploaded_digest}"

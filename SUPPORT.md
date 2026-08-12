@@ -1,31 +1,19 @@
-# Soporte
+# Support
 
-Dedicated Server Save Sync está en **mantenimiento estable para Palworld**.
+Dedicated Server Save Sync is in **stable maintenance for Palworld**.
 
-Las incidencias de GitHub se reservan para:
+Use GitHub Issues for reproducible bugs, non-sensitive security problems, Palworld compatibility regressions, dependency/documentation problems and small operational improvements that preserve the current scope.
 
-- bugs reproducibles;
-- seguridad no sensible;
-- incompatibilidades nuevas con Palworld;
-- dependencias, documentación y operación;
-- mejoras pequeñas que no cambien el alcance del producto.
+Use [GitHub Discussions](https://github.com/Ayerdi/dedicated-server-save-sync/discussions) for usage questions.
 
-Los rediseños multi-juego, discovery automático, múltiples instancias y agentes
-multiplataforma no forman parte del roadmap de este repositorio.
+Do not publish:
 
-Incluye versión, sistema operativo, pasos y salida redactada.
+- tokens or `Authorization` headers;
+- REST passwords;
+- real `.env`, `config.json` or `secrets.json` files;
+- saves, ZIP archives or SQLite databases;
+- internal domains, IP addresses, GUIDs, private paths or personal names.
 
-No publiques nunca:
+For vulnerabilities or diagnostics containing sensitive information, follow [SECURITY.md](SECURITY.md).
 
-- tokens o cabeceras `Authorization`;
-- contraseñas REST;
-- `.env`, `config.json` o `secrets.json` reales;
-- saves, ZIP o bases SQLite;
-- dominios internos, IP, GUID, rutas o nombres personales reales.
-
-Para preguntas de uso, emplea GitHub Discussions. Para vulnerabilidades o
-diagnósticos con información sensible, sigue [SECURITY.md](SECURITY.md).
-
-El proyecto no ofrece alojamiento, soporte de emergencia ni recuperación
-automática de mundos divergentes. Conserva backups externos antes de probar una
-versión nueva.
+The project does not provide hosted infrastructure, emergency support or automatic merging of divergent worlds. Keep independent backups before testing a new release.

@@ -1,24 +1,23 @@
 # Troubleshooting
 
-## Lock cannot be acquired
+## The client cannot acquire the lock
 
-Check `/status`, make sure no other live session exists, and avoid force-unlock
-unless you understand the current game-server state.
+Check `/status` and make sure no other live session exists. Do not force-unlock unless you understand whether another PalServer may still be running.
 
 ## A different world is detected
 
-Do not force the upload. Check the configured directory and `worldGuid`. This is
-a safety feature against overwriting another world.
+Do not force the upload. Check the configured directory and `worldGuid`. This rejection is a safety feature that prevents one world from overwriting another.
 
 ## A pending ZIP remains
 
-Do not delete it. The client preserves an unconfirmed publication for later
-reconciliation.
+Do not delete it. The client preserves unconfirmed publications so they can be reconciled safely.
 
-## Backup state is `unknown`
+## Backup state is `unknown` or `stalePending`
 
-A supervisor may have disappeared or a marker may be stale. `unknown` is
-neither confirmed success nor confirmed failure. Verify external storage.
+The supervisor may have crashed or a queue row may be older than expected. These states are neither confirmed success nor permission to delete the protected version. Inspect `backup-supervisor` logs and the external backup destination.
 
-Never paste complete logs into a public issue. Redact tokens, paths, GUIDs, IPs
-and domains.
+## What can I paste in an issue?
+
+Redact tokens, passwords, private paths, GUIDs, IP addresses, domains and personal names. Never attach a real save, ZIP or SQLite database to a public issue.
+
+[[Resolucion-de-problemas|Leer en español]]

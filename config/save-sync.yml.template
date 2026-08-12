@@ -1,5 +1,5 @@
-# Configuracion dinamica de Traefik para Save Sync.
-# deploy.sh sustituye el marcador del secreto y publica el resultado con modo 0600.
+# Dynamic Traefik configuration for Save Sync.
+# deploy.sh replaces the secret marker and publishes the result with mode 0600.
 http:
   middlewares:
     save-sync-__SAVE_SYNC_GAME_KEY__-clear-untrusted-auth:
@@ -27,7 +27,7 @@ http:
           - X-authentik-uid
           - X-authentik-jwt
 
-    # Debe ejecutarse despues de ForwardAuth para que el secreto llegue solamente
+    # Must run after ForwardAuth so the secret reaches only
     # al backend y nunca a Authentik.
     save-sync-__SAVE_SYNC_GAME_KEY__-inject-proxy-secret:
       headers:

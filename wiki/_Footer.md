@@ -1,3 +1,1 @@
-Dedicated Server Save Sync · Apache-2.0 ·
-[Repository](https://github.com/Ayerdi/dedicated-server-save-sync) ·
-[Security](https://github.com/Ayerdi/dedicated-server-save-sync/security/policy)
+Dedicated Server Save Sync · Apache-2.0 · [Repository](https://github.com/Ayerdi/dedicated-server-save-sync) · [Security](https://github.com/Ayerdi/dedicated-server-save-sync/security/policy) · [[Home|English]] · [[Inicio|Español]]

@@ -370,7 +370,7 @@ def test_web_authenticated_user_outside_allowlist_is_forbidden(client):
     assert response.status_code == 403
     assert response.get_json() == {
         "error": "web_user_not_allowed",
-        "message": "El usuario autenticado no está autorizado para Palworld.",
+        "message": "The authenticated user is not authorized for Palworld.",
         "details": {},
     }
 
@@ -397,8 +397,8 @@ def test_panel_escapes_api_values_used_in_inner_html(client):
     assert "${esc(x[1])}" in panel
     assert "${t.name}" not in panel
     assert "catch(()=>null)" in panel
-    assert "Backup automático: no disponible" in panel
-    assert "Estado de la versión actual: no disponible" in panel
+    assert "Automatic backup: unavailable" in panel
+    assert "Current version backup state: unavailable" in panel
 
 
 def test_api_ignores_forged_authentik_headers(client):

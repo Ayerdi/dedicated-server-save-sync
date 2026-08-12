@@ -96,4 +96,4 @@ curl --fail-with-body --silent --show-error -X POST \
 final_json="$(curl --fail-with-body --silent --show-error -H "${AUTH_HEADER}" "${BASE_URL}/status")"
 python3 -c 'import json,sys; value=json.load(sys.stdin); assert value["version"] == 2 and value["locked"] is False' <<<"${final_json}"
 
-printf 'E2E local OK: bootstrap, lock, upload, download, restore, conflicto de mundo y unlock.\n'
+printf 'Local E2E OK: bootstrap, lock, upload, download, restore, world conflict and unlock.\n'

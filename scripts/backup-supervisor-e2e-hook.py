@@ -14,15 +14,15 @@ except (OSError, ValueError):
 counter.write_text(str(attempt), encoding="utf-8")
 (temporary / f"backup-e2e-started-v{version}-{attempt}").touch()
 
-# v1 espera una señal para que el E2E pueda matar/reiniciar el contenedor web
-# mientras el backup continúa bajo el sidecar independiente.
+# v1 waits for a signal so the E2E can kill/restart the web container
+# while backup continues under the independent sidecar.
 if version == 1:
     release = temporary / "backup-e2e-release-v1"
     while not release.exists():
         time.sleep(0.1)
 
-# v2 bloquea deliberadamente el primer intento. El test mata el propio
-# supervisor con SIGKILL; al reiniciarse, la cola durable debe provocar intento 2.
+# v2 deliberately blocks the first attempt. The test kills the
+# supervisor with SIGKILL; after restart the durable queue must trigger attempt 2.
 elif version == 2 and attempt == 1:
     while True:
         time.sleep(1)
