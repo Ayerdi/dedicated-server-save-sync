@@ -230,8 +230,8 @@ GET    /admin/audit?limit=100
 GET /backup-status
 ```
 
-Devuelve el estado operativo del hook para que clientes y panel puedan
-responder si la versión vigente está realmente respaldada:
+Devuelve el estado observable del hook para que clientes y panel puedan
+responder si el hook confirmó correctamente el backup de la versión vigente:
 
 ```json
 {
@@ -241,6 +241,8 @@ responder si la versión vigente está realmente respaldada:
   "latestVersionBackedUp": true,
   "pending": false,
   "pendingVersions": [],
+  "stalePending": false,
+  "stalePendingVersions": [],
   "lastAttempt": {
     "version": 13,
     "completedAt": "2026-08-12T10:00:00Z",
@@ -262,8 +264,19 @@ responder si la versión vigente está realmente respaldada:
 
 `state` puede ser `not_initialized`, `disabled`, `pending`, `completed`,
 `failed` o `unknown`. `unknown` indica que el hook está habilitado pero no hay
-marcador ni resultado auditable para la versión vigente; debe investigarse, no
-interpretarse como éxito. Requiere autenticación, pero no rol administrador.
+resultado auditable para la versión vigente. También se usa cuando el único
+marcador de esa versión está vencido (`started_at < ahora - (timeout + 60s)`).
+En ese caso `stalePending` es `true`, el marcador aparece en
+`stalePendingVersions` y no se cuenta como pendiente activo.
+
+`latestVersionBackedUp=true` significa que el hook de la versión vigente
+terminó con éxito y ese resultado quedó auditado. El endpoint no consulta el
+repositorio restic ni verifica que el snapshot siga existiendo en el momento
+de la consulta.
+
+La llamada es solo lectura: clasifica los marcadores vencidos pero no los
+purga de SQLite. La limpieza persistente sigue correspondiendo al cleanup
+normal. Requiere autenticación, pero no rol administrador.
 
 Restaurar crea una versión creciente y conserva `saveIdentity`.
 
