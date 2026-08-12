@@ -24,6 +24,11 @@ from flask import Flask, Response, g, jsonify, request, send_file
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from save_sync.retention import (
+    prune_canonical_versions_locked,
+    reconcile_unreferenced_files_locked,
+)
+
 GAME_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 SCHEMA_VERSION = 3
 
@@ -384,44 +389,30 @@ def create_app(config=None):
     backup_timeout = int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"])
 
     def cleanup_canonical_versions():
-        """Conserva las últimas N versiones de cada slot configurado.
+        """Conserva las últimas N versiones por slot con filesystem best-effort.
 
         Un pending_backups no caduca por cleanup: es una cola durable y protege
-        su ZIP hasta que el supervisor externo registre éxito o fallo.
+        su ZIP hasta que el supervisor externo registre éxito o fallo. La
+        retención de metadata se confirma antes de cualquier unlink físico.
         """
         with transaction(immediate=True) as db:
-            rows = db.execute(
-                "SELECT v.version,v.path,u.username FROM versions v "
-                "JOIN users u ON u.id=v.updated_by ORDER BY v.version DESC"
-            ).fetchall()
-            pending_backups = {
-                row[0] for row in db.execute("SELECT version FROM pending_backups")
-            }
-            kept_per_slot = {}
-            for row in rows:
-                slot = identity_for_username(row["username"])["slot"]
-                kept = kept_per_slot.get(slot, 0)
-                if kept >= retention_per_slot and row["version"] not in pending_backups:
-                    db.execute(
-                        "DELETE FROM versions WHERE version=?", (row["version"],)
-                    )
-                else:
-                    kept_per_slot[slot] = kept + 1
-            referenced = {
-                storage / row["path"]
-                for row in db.execute("SELECT path FROM versions").fetchall()
-            }
-            # El glob y los unlink permanecen bajo BEGIN IMMEDIATE. Upload y
-            # restore mueven su ZIP final bajo el mismo lock, por lo que no
-            # pueden publicar entre este snapshot y la reconciliación.
-            candidates = set((storage / "backups").glob("save-v*.zip"))
-            for path in candidates - referenced:
-                try:
-                    path.unlink(missing_ok=True)
-                except OSError:
-                    # La metadata obsoleta se confirma igualmente. El ZIP
-                    # huérfano se reintentará en el siguiente cleanup/arranque.
-                    app.logger.exception("No se pudo eliminar ZIP obsoleto %s", path)
+            prune_canonical_versions_locked(
+                db,
+                retention_per_slot,
+                identity_for_username,
+            )
+
+        # Segunda fase, después del COMMIT de metadata. Un nuevo BEGIN IMMEDIATE
+        # vuelve a validar todas las referencias antes de tocar el filesystem.
+        # Si esta fase falla, queda como máximo un ZIP huérfano recuperable.
+        try:
+            with transaction(immediate=True) as db:
+                reconcile_unreferenced_files_locked(db, storage, app.logger)
+        except Exception:
+            app.logger.exception(
+                "La retención de metadata quedó confirmada, pero falló la "
+                "reconciliación física; se reintentará en un cleanup posterior"
+            )
 
     # Recupera limpiezas interrumpidas. Los backups pendientes no se purgan:
     # pertenecen al supervisor durable y sobreviven a workers/reinicios.
