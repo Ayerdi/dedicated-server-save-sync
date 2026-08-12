@@ -397,7 +397,8 @@ def test_panel_escapes_api_values_used_in_inner_html(client):
     assert "${esc(x[1])}" in panel
     assert "${t.name}" not in panel
     assert "catch(()=>null)" in panel
-    assert "Estado: no disponible" in panel
+    assert "Backup automático: no disponible" in panel
+    assert "Estado de la versión actual: no disponible" in panel
 
 
 def test_api_ignores_forged_authentik_headers(client):
