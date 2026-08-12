@@ -9,6 +9,7 @@ import pytest
 
 from save_sync.app import create_app, digest, iso, utcnow
 
+
 WORLD_GUID = "A7E97BAA767DB9029EF013BB71E993A0"
 OTHER_WORLD_GUID = "B8F08CBB878EC013AF1024CC82FAA4B1"
 

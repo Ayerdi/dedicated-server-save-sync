@@ -1,14 +1,18 @@
-import fcntl
 import hashlib
 import hmac
 import html
+import fcntl
 import json
 import os
 import re
 import secrets
+import shlex
+import signal
 import sqlite3
 import stat
+import subprocess
 import tempfile
+import threading
 import time
 import zipfile
 from contextlib import contextmanager
@@ -20,8 +24,9 @@ from flask import Flask, Response, g, jsonify, request, send_file
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+
 GAME_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def utcnow():
@@ -80,7 +85,11 @@ CREATE TABLE IF NOT EXISTS audit (
  client_id TEXT, details TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS rate_limits (
- identity TEXT NOT NULL, window INTEGER NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(identity, window)
+  identity TEXT NOT NULL, window INTEGER NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(identity, window)
+);
+CREATE TABLE IF NOT EXISTS pending_backups (
+  version INTEGER PRIMARY KEY REFERENCES versions(version),
+  started_at TEXT NOT NULL
 );
 """
 
@@ -104,6 +113,9 @@ DEFAULTS = {
     ),
     "SAVE_SYNC_REQUIRE_HTTPS": True,
     "SAVE_SYNC_PROXY_SECRET": "",
+    "SAVE_SYNC_RETENTION_PER_SLOT": 1,
+    "SAVE_SYNC_POST_PUBLISH_COMMAND": "",
+    "SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS": 1800,
 }
 
 
@@ -132,6 +144,10 @@ def create_app(config=None):
         else:
             app.config[key] = raw
     app.config.update(config or {})
+    if int(app.config["SAVE_SYNC_RETENTION_PER_SLOT"]) < 1:
+        raise RuntimeError("SAVE_SYNC_RETENTION_PER_SLOT debe ser >= 1")
+    if int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"]) < 1:
+        raise RuntimeError("SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS debe ser >= 1")
     game = dict(DEFAULT_GAME)
     game_config_path = str(app.config.get("SAVE_SYNC_GAME_CONFIG_PATH", "")).strip()
     if game_config_path:
@@ -186,11 +202,11 @@ def create_app(config=None):
     except (TypeError, json.JSONDecodeError) as exc:
         raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON no es JSON válido") from exc
     if not isinstance(raw_identities, dict):
-        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON debe ser un objeto JSON")  # noqa: TRY004
+        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON debe ser un objeto JSON")
     identities = {}
     for username, profile in raw_identities.items():
         if not isinstance(profile, dict):
-            raise RuntimeError(f"Perfil de identidad inválido para {username}")  # noqa: TRY004
+            raise RuntimeError(f"Perfil de identidad inválido para {username}")
         display = str(profile.get("displayName", "")).strip()
         slot = str(profile.get("slot", "")).strip()
         if not username.strip() or not display or not slot:
@@ -365,22 +381,39 @@ def create_app(config=None):
             {"displayName": username, "slot": username.casefold()},
         )
 
+    retention_per_slot = int(app.config["SAVE_SYNC_RETENTION_PER_SLOT"])
+    backup_timeout = int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"])
+
     def cleanup_canonical_versions():
-        """Conserva únicamente la última versión de cada slot configurado."""
+        """Conserva las últimas N versiones de cada slot configurado."""
         with transaction(immediate=True) as db:
+            # Purga first: marca como huérfanas las filas cuyo backup excedió el
+            # timeout (p. ej. worker reemplazado sin su thread). Esto evita que
+            # una versión protegida eternamente bloquee la retención.
+            stale_before = iso(
+                utcnow() - timedelta(seconds=backup_timeout + 60)
+            )
+            db.execute(
+                "DELETE FROM pending_backups WHERE started_at < ?",
+                (stale_before,),
+            )
             rows = db.execute(
                 "SELECT v.version,v.path,u.username FROM versions v "
                 "JOIN users u ON u.id=v.updated_by ORDER BY v.version DESC"
             ).fetchall()
-            kept_slots = set()
+            pending_backups = {
+                row[0] for row in db.execute("SELECT version FROM pending_backups")
+            }
+            kept_per_slot = {}
             for row in rows:
                 slot = identity_for_username(row["username"])["slot"]
-                if slot in kept_slots:
+                kept = kept_per_slot.get(slot, 0)
+                if kept >= retention_per_slot and row["version"] not in pending_backups:
                     db.execute(
                         "DELETE FROM versions WHERE version=?", (row["version"],)
                     )
                 else:
-                    kept_slots.add(slot)
+                    kept_per_slot[slot] = kept + 1
             referenced = {
                 storage / row["path"]
                 for row in db.execute("SELECT path FROM versions").fetchall()
@@ -397,8 +430,187 @@ def create_app(config=None):
                     # huérfano se reintentará en el siguiente cleanup/arranque.
                     app.logger.exception("No se pudo eliminar ZIP obsoleto %s", path)
 
-    # Recupera limpiezas interrumpidas y huérfanos de intentos anteriores.
+    # Recupera limpiezas interrumpidas y la tabla de backups pendientes.
     cleanup_canonical_versions()
+
+    def terminate_process_group(process, sigterm_timeout=10, sigkill_timeout=10):
+        """Envia SIGTERM al grupo de proceso del hijo (start_new_session) y, tras
+        el periodo de gracia, SIGKILL al grupo completo. process.wait() solo
+        vigila al proceso directo, por lo que un nieto que ignore SIGTERM
+        quedaría si no se mata el grupo entero. Nunca propaga errores."""
+        pgid = process.pid
+        try:
+            pgid = os.getpgid(process.pid)
+        except (ProcessLookupError, PermissionError):
+            return
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            return
+        try:
+            process.wait(timeout=sigterm_timeout)
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            return
+        try:
+            process.wait(timeout=sigkill_timeout)
+        except subprocess.TimeoutExpired:
+            app.logger.warning(
+                "El proceso de backup (pid %s) no terminó tras SIGKILL",
+                process.pid,
+            )
+
+    def arm_backup_marker(db, version):
+        """Marca la versión como pendiente de backup cuando el hook está activo.
+        Se llama dentro de la transacción de publicación/restore para que la
+        protección contra la retención sea atómica con la creación de la
+        versión."""
+        if not str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip():
+            return
+        db.execute(
+            "INSERT OR REPLACE INTO pending_backups(version,started_at) VALUES(?,?)",
+            (version, iso(utcnow())),
+        )
+
+    def release_backup_marker(version, success, exit_code=0, timed_out=False, reason=None):
+        """Desmarca el backup y audita el resultado. Best-effort: nunca invalida
+        una publicación ya confirmada."""
+        details = {
+            "version": version,
+            "exitCode": exit_code,
+            "timedOut": 1 if timed_out else 0,
+        }
+        if reason:
+            details["reason"] = reason
+        try:
+            with transaction(immediate=True) as db:
+                db.execute(
+                    "DELETE FROM pending_backups WHERE version=?", (version,)
+                )
+                audit(
+                    db,
+                    "backup_hook_completed" if success else "backup_hook_failed",
+                    None,
+                    success,
+                    **details,
+                )
+        except Exception:
+            app.logger.exception(
+                "No se pudo registrar el resultado del backup de la versión %s",
+                version,
+            )
+
+    def await_backup_result(process, version):
+        exit_code = 0
+        timed_out = False
+        success = False
+        try:
+            exit_code = process.wait(timeout=backup_timeout)
+            success = exit_code == 0
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            # El proceso arranca con start_new_session=True, así que su PGID es
+            # su propio PID. Se termina el grupo entero para no dejar huérfanos
+            # que sigan usando el ZIP publicado.
+            terminate_process_group(process, sigterm_timeout=10)
+            try:
+                exit_code = process.wait(timeout=5)
+                # timed_out ya implica fracaso; success se mantiene False.
+            except subprocess.TimeoutExpired:
+                exit_code = -1
+                app.logger.warning(
+                    "El backup externo de la versión %s no terminó tras SIGKILL",
+                    version,
+                )
+        finally:
+            release_backup_marker(version, success, exit_code, timed_out)
+            try:
+                cleanup_canonical_versions()
+            except Exception:
+                app.logger.exception(
+                    "La limpieza post-backup falló; la versión %s se conserva",
+                    version,
+                )
+            if not success or timed_out:
+                app.logger.warning(
+                    "El backup externo de la versión %s terminó con exit code %s%s",
+                    version,
+                    exit_code,
+                    " (timeout)" if timed_out else "",
+                )
+
+    def run_post_publish_hook(version, relative_path, save_identity):
+        """Lanza el backup externo; nunca invalida la publicación confirmada."""
+        command = str(app.config["SAVE_SYNC_POST_PUBLISH_COMMAND"]).strip()
+        if not command:
+            return
+        env = os.environ.copy()
+        env.update(
+            {
+                "SAVE_SYNC_PUBLISHED_VERSION": str(version),
+                "SAVE_SYNC_PUBLISHED_PATH": str(storage / relative_path),
+                "SAVE_SYNC_PUBLISHED_IDENTITY": save_identity,
+                "SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS": str(backup_timeout),
+            }
+        )
+        try:
+            argv = shlex.split(command)
+            if not argv:
+                return
+            process = subprocess.Popen(
+                argv,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+            )
+        except Exception:
+            # Popen()/shlex.split() falló: no hay proceso que esperar. La
+            # versión ya está publicada; liberamos el marcador best-effort y
+            # nunca devolvemos error al cliente.
+            app.logger.exception(
+                "Falló el hook post-publicación; la versión %s permanece publicada",
+                version,
+            )
+            release_backup_marker(version, False, reason="hook_launch_failed")
+            try:
+                cleanup_canonical_versions()
+            except Exception:
+                app.logger.exception(
+                    "La limpieza post-fallo-del-hook falló; la versión %s se conserva",
+                    version,
+                )
+            return
+
+        try:
+            threading.Thread(
+                target=await_backup_result,
+                args=(process, version),
+                daemon=True,
+            ).start()
+        except Exception:
+            # La publicación ya confirmó (COMMIT hecho). Matamos el proceso
+            # best-effort, liberamos el marcador y limpiamos, pero NUNCA
+            # devolvemos 500: la partida se publicó correctamente.
+            app.logger.exception(
+                "No se pudo iniciar el supervisor de backup para la versión %s; "
+                "la versión permanece publicada",
+                version,
+            )
+            terminate_process_group(process)
+            release_backup_marker(version, False, reason="thread_start_failed")
+            try:
+                cleanup_canonical_versions()
+            except Exception:
+                app.logger.exception(
+                    "La limpieza post-fallo-del-supervisor falló; la versión %s se conserva",
+                    version,
+                )
 
     def audit(db, event, user=None, success=True, client_id=None, **details):
         db.execute(
@@ -804,8 +1016,8 @@ def create_app(config=None):
                 (
                     digest(session_id),
                     g.save_sync_user["id"],
-                    g.save_sync_user["token_id"]  # noqa: SIM401
-                    if "token_id" in g.save_sync_user
+                    g.save_sync_user["token_id"]
+                    if "token_id" in g.save_sync_user.keys()
                     else None,
                     canonical_owner,
                     client_id,
@@ -818,12 +1030,12 @@ def create_app(config=None):
             audit(
                 db, "lock_acquired", g.save_sync_user, True, client_id, baseVersion=base
             )
-        lock_response = {
-            "sessionId": session_id,
-            "baseVersion": base,
-            "expiresAt": iso(expires),
-            "gameKey": game_key,
-        }
+        lock_response = dict(
+            sessionId=session_id,
+            baseVersion=base,
+            expiresAt=iso(expires),
+            gameKey=game_key,
+        )
         lock_response.update(identity_json(version["save_identity"] if version else None))
         return jsonify(lock_response), 201
 
@@ -847,7 +1059,7 @@ def create_app(config=None):
             same_token = row and (
                 row["token_id"] is None
                 or (
-                    "token_id" in g.save_sync_user
+                    "token_id" in g.save_sync_user.keys()
                     and row["token_id"] == g.save_sync_user["token_id"]
                 )
             )
@@ -1053,7 +1265,7 @@ def create_app(config=None):
                 same_token = lock and (
                     lock["token_id"] is None
                     or (
-                        "token_id" in g.save_sync_user
+                        "token_id" in g.save_sync_user.keys()
                         and lock["token_id"] == g.save_sync_user["token_id"]
                     )
                 )
@@ -1122,6 +1334,12 @@ def create_app(config=None):
                     "INSERT INTO current_save(singleton,version) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET version=excluded.version",
                     (new_version,),
                 )
+                # Marca de backup ATÓMICA con la publicación: la protección
+                # contra la retención debe existir desde el mismo instante en
+                # que la versión es viable. No insertarlo aquí fuera permitiría
+                # que otro publish del mismo slot eliminara el ZIP antes de que
+                # run_post_publish_hook() armara el marcador.
+                arm_backup_marker(db, new_version)
                 db.execute("DELETE FROM active_lock WHERE singleton=1")
                 audit(
                     db,
@@ -1144,15 +1362,16 @@ def create_app(config=None):
                 app.logger.exception(
                     "La limpieza post-publicación falló; la versión confirmada se conserva"
                 )
-            result = {
-                "ok": True,
-                "previousVersion": base,
-                "version": new_version,
-                "sha256": actual,
-                "size": size,
-                "updatedAt": updated_at,
-                "gameKey": game_key,
-            }
+            run_post_publish_hook(new_version, relative, save_identity)
+            result = dict(
+                ok=True,
+                previousVersion=base,
+                version=new_version,
+                sha256=actual,
+                size=size,
+                updatedAt=updated_at,
+                gameKey=game_key,
+            )
             result.update(identity_json(save_identity))
             return jsonify(result), 201
         except Exception:
@@ -1380,6 +1599,8 @@ def create_app(config=None):
                     "INSERT INTO current_save VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET version=excluded.version",
                     (new_version,),
                 )
+                # Marcador de backup atómico con la restauración publicada.
+                arm_backup_marker(db, new_version)
                 audit(
                     db,
                     "backup_restored",
@@ -1402,15 +1623,16 @@ def create_app(config=None):
             app.logger.exception(
                 "La limpieza posterior a restauración falló; la versión confirmada se conserva"
             )
-        result = {
-            "ok": True,
-            "version": new_version,
-            "restoredFromVersion": version,
-            "sha256": source["sha256"],
-            "size": source["size"],
-            "updatedAt": now,
-            "gameKey": game_key,
-        }
+        run_post_publish_hook(new_version, relative, source["save_identity"])
+        result = dict(
+            ok=True,
+            version=new_version,
+            restoredFromVersion=version,
+            sha256=source["sha256"],
+            size=source["size"],
+            updatedAt=now,
+            gameKey=game_key,
+        )
         result.update(identity_json(source["save_identity"]))
         return jsonify(result), 201
 
@@ -1423,12 +1645,22 @@ def create_app(config=None):
                 "SELECT * FROM versions WHERE version=?", (version,)
             ).fetchone()
             if not row:
-                return error("version_not_found", "Versión no encontrada.", 404)
+               return error("version_not_found", "Versión no encontrada.", 404)
             if version == current["version"]:
                 return error(
                     "version_current",
                     "La versión actual no puede eliminarse.",
                     409,
+                )
+            pending = db.execute(
+                "SELECT 1 FROM pending_backups WHERE version=?", (version,)
+            ).fetchone()
+            if pending:
+                return error(
+                    "backup_in_progress",
+                    "La versión tiene un backup externo en curso.",
+                    409,
+                    {"version": version},
                 )
             db.execute("DELETE FROM versions WHERE version=?", (version,))
             audit(db, "backup_deleted", g.save_sync_user, True, version=version)

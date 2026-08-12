@@ -54,25 +54,60 @@ ser una operación administrativa diseñada y probada, no una copia de SQLite.
 | `SAVE_SYNC_MAX_UPLOAD_SIZE` | Tamaño ZIP máximo |
 | `SAVE_SYNC_LOCK_TTL_SECONDS` | TTL del lock, 300 por defecto |
 | `SAVE_SYNC_HEARTBEAT_INTERVAL_SECONDS` | Intervalo recomendado, 60 |
+| `SAVE_SYNC_RETENTION_PER_SLOT` | Versiones por slot (por defecto 1) |
+| `SAVE_SYNC_POST_PUBLISH_COMMAND` | Comando externo de backup tras publicar |
+| `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS` | Timeout del backup (por defecto 1800) |
 | `SAVE_SYNC_PROXY_SECRET` | Cabecera interna proxy/backend |
 | `SAVE_SYNC_CSRF_SECRET` | Firma CSRF del panel |
 
 Los dos últimos valores deben ser independientes, aleatorios y tener al menos
 32 caracteres. No deben aparecer en Traefik estático, logs o Git.
 
-## Retención y desviación deliberada
+## Retención y backup externo
 
-El requisito operativo de este despliegue es conservar como máximo el último
-ZIP de cada anfitrión. `SAVE_SYNC_USER_IDENTITIES_JSON` asigna cada usuario o
-alias a un `slot`; la limpieza posterior a un upload o restore conserva una
-sola versión por slot. Con `host-a` y `host-b`, el máximo normal son dos ZIP.
+Cada usuario se asocia a un `slot` mediante
+`SAVE_SYNC_USER_IDENTITIES_JSON`. `SAVE_SYNC_RETENTION_PER_SLOT` controla
+cuántas versiones recientes se conservan por slot (por defecto 1). Con dos
+slots y retención 1, el máximo normal son dos ZIP; con retención 5, hasta
+diez. El límite de espacio sigue siendo deliberado y configurable.
 
-Por ese motivo esta versión no implementa backups `protected` ni garantiza
-conservar siempre la versión inmediatamente anterior: cualquiera de esas dos
-reglas permitiría superar el máximo. Las filas y archivos antiguos se eliminan
-solo después de confirmar una publicación válida. Si se necesita retención de
-largo plazo, debe realizarse con un backup externo coherente del volumen y de
-SQLite.
+Tras cada publicación confirmada se ejecuta
+`SAVE_SYNC_POST_PUBLISH_COMMAND` con las variables de entorno
+`SAVE_SYNC_PUBLISHED_VERSION`, `SAVE_SYNC_PUBLISHED_PATH`,
+`SAVE_SYNC_PUBLISHED_IDENTITY` y `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`.
+El comando se lanza en segundo plano, sin bloquear la respuesta al cliente, y
+cualquier fallo (incluido no poder arrancar el proceso) no invalida la versión
+publicada. Se respeta su timeout (`SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS`,
+1800s por defecto) y se graba en auditoría `backup_hook_completed` o
+`backup_hook_failed` con el `exitCode` real.
+
+> **Límite de resiliencia del worker:** el proceso de backup se lanza en segundo
+> plano con `start_new_session=True` y se supervisa desde un thread *daemon* del
+> worker que lo armó. Si ese worker muere (p. ej. reinicio de Gunicorn), el
+> thread desaparece y el proceso externo queda huérfano: se pierde su timeout.
+> Tras `started_at < ahora - (timeout + 60s)`, otro `cleanup_canonical_versions`
+> purga el marcador stale y reabre la retención, pero el proceso externo podría
+> seguir ejecutable mientras tanto. Para la carga prevista (un par de hosts) se
+> asume; un scheduler/queue dedicado cambiaría esta ecuación.
+
+La imagen incluye `restic`; configúrese `RESTIC_REPOSITORY` y
+`RESTIC_PASSWORD` (o su equivalente) como secretos del despliegue. El cache de
+restic se dirige a `RESTIC_CACHE_DIR=/data/save-sync/temporary`, dentro del
+volumen escribible. Excluya ese directorio del backup (ejemplo recomendado):
+
+```dotenv
+SAVE_SYNC_POST_PUBLISH_COMMAND=restic backup /data/save-sync --exclude /data/save-sync/temporary
+```
+
+> **Coherencia del backup:** el hook protege el ZIP publicado actual de la
+> retención mientras el backup lo necesita, pero no crea un snapshot
+> atómico de SQLite. Con `journal_mode=WAL` y uploads concurrentes,
+> `restic backup /data/save-sync` no es transaccional sobre la base. Para un
+> DR completo y coherente, combine `restic` (o su herramienta) con la
+> [SQLite Backup API](https://www.sqlite.org/backupapi.html) o suspenda el
+> servicio durante el backup del volumen. El único caso fuerte garantizado por
+> Save Sync es la integridad del **ZIP publicado** individual, que es
+> inmutable tras el commit.
 
 ## Despliegue
 

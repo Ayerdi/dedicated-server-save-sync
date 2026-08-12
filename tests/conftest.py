@@ -6,6 +6,7 @@ import pytest
 
 from save_sync import create_app
 
+
 TOKENS = {"admin": "pws_admin_test", "player": "pws_player_test"}
 OWNERS = {"admin": "Host A", "player": "Host B"}
 WORLD_GUID = "A7E97BAA767DB9029EF013BB71E993A0"

@@ -5,9 +5,10 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from conftest import WORLD_GUID, acquire, auth, initialize, upload, zip_bytes
 
+from conftest import WORLD_GUID, acquire, auth, initialize, upload, zip_bytes
 from save_sync import create_app
+
 
 OTHER_WORLD_GUID = "B8F08CBB878ECA13AF1024CC82FAA4B1"
 
