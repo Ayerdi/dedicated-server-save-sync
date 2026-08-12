@@ -60,16 +60,24 @@ separado, `backup-supervisor`, comparte SQLite y el volumen privado. Consume
 `pending_backups`, refresca `started_at` al comenzar un intento, lanza el hook en
 un process-group aislado y registra el resultado.
 
-La finalización se hace bajo un único `BEGIN IMMEDIATE`: eliminar la fila,
-auditar éxito/fallo y aplicar retención son una sola decisión. Si esa
-transacción falla, rollback conserva el trabajo. La semántica es
+La finalización confirma bajo un único `BEGIN IMMEDIATE` la eliminación de la
+fila pendiente, la auditoría de éxito/fallo y la **retención de metadata**. Si
+esa transacción falla, rollback conserva el trabajo. La semántica es
 **at-least-once**: un crash cuyo resultado no pudo registrarse puede repetir el
 hook al arrancar de nuevo.
+
+El borrado físico de ZIPs obsoletos ocurre después de ese commit y bajo un
+segundo `BEGIN IMMEDIATE` que vuelve a comprobar qué rutas siguen referenciadas.
+Así se cubren las dos carreras opuestas: un crash antes del primer commit nunca
+puede dejar SQLite apuntando a un ZIP ya eliminado, y una publicación concurrente
+no puede reutilizar un nombre huérfano entre el snapshot y el `unlink`. Si el
+proceso cae en la segunda fase, el único residuo posible es un ZIP huérfano,
+recuperable por la reconciliación posterior.
 
 Una parada controlada del supervisor termina su grupo hijo pero conserva la
 fila. Un crash de Gunicorn no afecta al proceso de backup porque vive en otro
 contenedor. Un crash duro del propio supervisor deja la cola en SQLite y Docker
-elimina el proceso namespace del contenedor; al reiniciar, la nueva instancia
+elimina el process namespace del contenedor; al reiniciar, la nueva instancia
 reclama el trabajo. Un singleton `flock` impide dos consumidores simultáneos
 sobre el mismo almacenamiento.
 
@@ -84,8 +92,8 @@ indefinidamente. El hook debe tolerar repetición para el caso incierto de crash
 - `PRAGMA user_version=3` permite detectar upgrades y rechazar downgrades.
 - Dos adquisiciones simultáneas producen un único ganador.
 - Dos uploads sobre la misma base no pueden publicar la misma versión.
-- La limpieza física permanece bajo el mismo lock de escritura que el snapshot
-  de referencias, evitando borrar un ZIP recién publicado.
+- La limpieza física toma un nuevo lock de escritura y revalida referencias
+  después de que la retención de metadata ya esté confirmada.
 - La cola de backup y la publicación nacen en el mismo commit SQLite: nunca
   existe una versión confirmada que debiera respaldarse pero no haya quedado
   encolada por muerte del worker entre dos transacciones.
