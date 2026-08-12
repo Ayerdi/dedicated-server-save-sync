@@ -332,7 +332,6 @@ curl --fail-with-body -H "$AUTH" --output save.zip --dump-header headers.txt \
 
 SHA256=$(sha256sum save.zip | cut -d' ' -f1)
 curl --fail-with-body -X POST -H "$AUTH" \
-  -H "${AUTH_HEADER:-$AUTH}" \
   -F 'file=@save.zip;type=application/zip' \
   -F "sessionId=${SESSION}" \
   -F 'baseVersion=12' \
