@@ -33,12 +33,13 @@ jobs:
           pip-compile --generate-hashes --strip-extras --output-file=requirements.txt requirements.in
           pip-compile --allow-unsafe --generate-hashes --strip-extras --output-file=requirements-dev.txt requirements-dev.in
           git diff --exit-code -- requirements.txt requirements-dev.txt
-      - run: ruff check save_sync tests wsgi.py scripts/check-docs.py
+      - run: ruff check save_sync tests wsgi.py scripts/check-docs.py scripts/backup-supervisor-e2e-hook.py
       - run: python scripts/check-docs.py
       - run: python -m pytest -q
       - run: pip-audit -r requirements.txt --progress-spinner=off
       - run: docker compose config --quiet
       - run: docker build -t dedicated-server-save-sync:test .
+      - run: restic_version="$(docker run --rm --entrypoint restic dedicated-server-save-sync:test version | awk '{print $2}')"; test "${restic_version}" = "0.18.0"
       - run: bash scripts/check-repository.sh
 
   powershell:
@@ -57,12 +58,13 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: bash scripts/local-e2e.sh
+      - run: bash scripts/backup-supervisor-e2e.sh
 
   secrets:
     runs-on: ubuntu-latest
