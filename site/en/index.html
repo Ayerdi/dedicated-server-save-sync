@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Concurrency-safe save synchronization for alternating Palworld dedicated-server hosts.">
+  <title>Dedicated Server Save Sync · Palworld</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<nav>
+  <div class="wrap navbar">
+    <a class="brand" href="./">SAVE SYNC</a>
+    <div class="navlinks">
+      <a href="#how">How it works</a>
+      <a href="#safety">Safety</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/Ayerdi/dedicated-server-save-sync/wiki">Wiki</a>
+      <a href="https://github.com/Ayerdi/dedicated-server-save-sync">GitHub</a>
+      <a class="lang" href="../">ES</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="kicker">v2.2.0 · stable · Palworld</span>
+    <h1>One authoritative save.<br>The host can change.</h1>
+    <p>
+      Dedicated Server Save Sync coordinates the same Palworld world across
+      multiple PCs without keeping a game server online 24/7 and without passing
+      ZIP files around manually.
+    </p>
+    <div class="actions">
+      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest">Download client</a>
+      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/blob/main/README.en.md#quick-start">Installation</a>
+      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/blob/main/docs/ARCHITECTURE.md">Architecture</a>
+    </div>
+  </div>
+</header>
+
+<main>
+<section id="how">
+  <div class="wrap">
+    <div class="section-title">
+      <h2>Stop asking “which save was the good one?”</h2>
+      <p>The backend keeps a single authority and every host must prove it started from the right version.</p>
+    </div>
+    <div class="flow">
+      <div>1 · status + lock</div><div class="arrow">→</div>
+      <div>2 · download if needed</div><div class="arrow">→</div>
+      <div>3 · PalServer + heartbeat</div>
+    </div>
+    <div class="flow" style="margin-top:.65rem">
+      <div>4 · save + shutdown</div><div class="arrow">→</div>
+      <div>5 · ZIP + SHA-256</div><div class="arrow">→</div>
+      <div>6 · upload with baseVersion</div>
+    </div>
+  </div>
+</section>
+
+<section id="safety">
+  <div class="wrap">
+    <div class="section-title">
+      <h2>Designed to fail without silently overwriting progress</h2>
+      <p>The hard part is not uploading a folder. It is preserving invariants across two hosts, unstable networks and failing processes.</p>
+    </div>
+    <div class="grid">
+      <article class="card"><h3>Concurrency</h3><p>Exclusive lock, TTL, heartbeat and optimistic concurrency through <code>baseVersion</code>.</p></article>
+      <article class="card"><h3>Identity</h3><p>Palworld uses <code>worldGuid</code> to prevent publishing the wrong world.</p></article>
+      <article class="card"><h3>Atomic publication</h3><p>Temporary ZIP, defensive validation, SHA-256 and SQLite-backed authority changes.</p></article>
+      <article class="card"><h3>Recovery</h3><p>History, restore as a new version, pending ZIP recovery and operational rollback.</p></article>
+      <article class="card"><h3>External backup</h3><p>Post-publication hook, timeout, audit trail and observable state. Works with tools such as restic.</p></article>
+      <article class="card"><h3>Secrets</h3><p>Bearer hashes server-side and DPAPI on Windows. Runtime files are excluded from source and release assets.</p></article>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <div class="section-title">
+      <h2>Self-hosted backend + Windows client</h2>
+      <p>The backend stays available on the web. PalServer only runs on the PC hosting the current session.</p>
+    </div>
+    <div class="status">
+      <div class="card">
+        <h3>Backend</h3>
+        <pre>git clone https://github.com/Ayerdi/dedicated-server-save-sync.git
+cd dedicated-server-save-sync
+cp .env.example .env
+chmod 600 .env
+config/deploy.sh --init-env
+config/deploy.sh</pre>
+        <p>Production: Docker Compose, HTTPS, private storage and Traefik/ForwardAuth or API-only mode.</p>
+      </div>
+      <div class="card">
+        <h3>Client</h3>
+        <p><strong>1.</strong> Download the v2.2.0 ZIP.</p>
+        <p><strong>2.</strong> Copy <code>config.example.json</code>.</p>
+        <p><strong>3.</strong> Configure the URL and PalServer.</p>
+        <p><strong>4.</strong> Run <code>Configurar-secretos.cmd</code> and <code>Probar-conexion.cmd</code>.</p>
+        <p><strong>5.</strong> Start with <code>Iniciar-PalworldSync.cmd</code>.</p>
+      </div>
+    </div>
+    <p class="note">Palworld's local REST API must not be exposed to the Internet. Save Sync talks to it through localhost.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="section-title">
+      <h2>Backup status without fake certainty</h2>
+      <p>The panel separates whether automatic backup is enabled now from whether the current version's hook reported success.</p>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>completed</h3><p>A successful audited result exists for the current version.</p></div>
+      <div class="card"><h3>pending</h3><p>An active backup marker exists inside its valid time window.</p></div>
+      <div class="card"><h3>unknown</h3><p>Evidence is insufficient, for example after a stale marker. It is never presented as success.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="section-title">
+      <h2>Feature-complete, not abandoned</h2>
+      <p>v2.2.0 closes feature development for this Palworld reference. Maintenance continues for bugs, security, dependencies and compatibility.</p>
+    </div>
+    <div class="actions">
+      <a class="button primary" href="https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest">Release v2.2.0</a>
+      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/wiki">Wiki</a>
+      <a class="button" href="https://github.com/Ayerdi/dedicated-server-save-sync/discussions">Discussions</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    Apache-2.0 · Community project not affiliated with Pocketpair, Inc. ·
+    <a href="https://github.com/Ayerdi/dedicated-server-save-sync/security/policy">Security</a>
+  </div>
+</footer>
+</body>
+</html>
