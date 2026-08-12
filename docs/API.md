@@ -230,8 +230,8 @@ GET    /admin/audit?limit=100
 GET /backup-status
 ```
 
-Devuelve el estado observable del hook para que clientes y panel puedan
-responder si el hook confirmó correctamente el backup de la versión vigente:
+Devuelve el estado observable del backup para que clientes y panel puedan
+responder si el supervisor confirmó correctamente el hook de la versión vigente:
 
 ```json
 {
@@ -263,18 +263,25 @@ responder si el hook confirmó correctamente el backup de la versión vigente:
 ```
 
 `state` puede ser `not_initialized`, `disabled`, `pending`, `completed`,
-`failed` o `unknown`. `unknown` indica que el hook está habilitado pero no hay
+`failed` o `unknown`. `unknown` indica que el backup está habilitado pero no hay
 resultado auditable para la versión vigente. También se usa cuando el único
 marcador de esa versión está vencido (`started_at < ahora - (timeout + 60s)`).
 En ese caso `stalePending` es `true`, el marcador aparece en
-`stalePendingVersions` y no se cuenta como pendiente activo.
+`stalePendingVersions` y no se cuenta como pendiente activo en la presentación.
+
+Los registros de `pending_backups` son una **cola durable**. `stalePending` es
+solo diagnóstico de antigüedad: ni este GET ni la retención purgan una fila por
+ser vieja. Si el web o `backup-supervisor` se reinician antes de registrar un
+resultado final, la fila y el ZIP protegido sobreviven y el supervisor vuelve a
+reclamar el trabajo. Por diseño el hook puede ejecutarse más de una vez tras un
+crash cuyo resultado quedó incierto.
 
 `enabled` representa la configuración **actual** del hook y es independiente
 del resultado histórico de la versión vigente. Por ejemplo, una versión que
 se respaldó correctamente puede seguir devolviendo `state="completed"` y
 `latestVersionBackedUp=true` después de desactivar el hook, mientras
-`enabled=false` advierte que las publicaciones siguientes ya no lanzarán el
-backup automático. Los clientes deben mostrar ambas dimensiones por separado.
+`enabled=false` advierte que las publicaciones siguientes no encolarán backup
+automático. Los clientes deben mostrar ambas dimensiones por separado.
 
 `lastAttempt`, `lastCompleted` y el resultado de la versión vigente se obtienen
 recorriendo la auditoría en orden descendente hasta encontrar los registros
@@ -282,13 +289,11 @@ válidos necesarios; no se pierden éxitos antiguos por un límite fijo de 500
 eventos.
 
 `latestVersionBackedUp=true` significa que el hook de la versión vigente
-terminó con éxito y ese resultado quedó auditado. El endpoint no consulta el
-repositorio restic ni verifica que el snapshot siga existiendo en el momento
-de la consulta.
+terminó con éxito y ese resultado quedó auditado por el supervisor. El endpoint
+no consulta el repositorio restic ni verifica que el snapshot siga existiendo
+en el momento de la consulta.
 
-La llamada es solo lectura: clasifica los marcadores vencidos pero no los
-purga de SQLite. La limpieza persistente sigue correspondiendo al cleanup
-normal. Requiere autenticación, pero no rol administrador.
+La llamada es solo lectura. Requiere autenticación, pero no rol administrador.
 
 Restaurar crea una versión creciente y conserva `saveIdentity`.
 
@@ -327,6 +332,7 @@ curl --fail-with-body -H "$AUTH" --output save.zip --dump-header headers.txt \
 
 SHA256=$(sha256sum save.zip | cut -d' ' -f1)
 curl --fail-with-body -X POST -H "$AUTH" \
+  -H "${AUTH_HEADER:-$AUTH}" \
   -F 'file=@save.zip;type=application/zip' \
   -F "sessionId=${SESSION}" \
   -F 'baseVersion=12' \
