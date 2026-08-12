@@ -2,7 +2,7 @@
 
 Gracias por ayudar a mantener Dedicated Server Save Sync.
 
-`v2.2.0` marca la implementación estable de referencia para Palworld. Este
+`v2.2.1` marca la implementación estable de referencia para Palworld. Este
 repositorio acepta mantenimiento, no un rediseño de producto.
 
 Antes de proponer un cambio, lee [SECURITY.md](SECURITY.md) y

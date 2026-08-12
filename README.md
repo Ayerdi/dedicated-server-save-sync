@@ -6,7 +6,7 @@
 
 **Sincronización segura de partidas para alojar alternativamente un servidor dedicado de Palworld en varios PCs sin mantener uno encendido 24/7.**
 
-> **Estado:** `v2.2.0` es la referencia estable de Palworld. Este repositorio está en mantenimiento: correcciones, seguridad, dependencias y compatibilidad con Palworld. La evolución multi-juego se desarrollará por separado.
+> **Estado:** `v2.2.1` es la referencia estable de Palworld. Este repositorio está en mantenimiento: correcciones, seguridad, dependencias y compatibilidad con Palworld. La evolución multi-juego se desarrollará por separado.
 
 [English](README.en.md) · [Web](https://ayerdi.github.io/dedicated-server-save-sync/) · [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki) · [Releases](https://github.com/Ayerdi/dedicated-server-save-sync/releases) · [Documentación](docs/INDEX.md)
 
@@ -44,7 +44,7 @@ El PC que juega ejecuta PalServer. La web conserva la versión válida, arbitra 
 - tokens Bearer por equipo almacenados únicamente como hashes;
 - secretos locales cifrados con Windows DPAPI;
 - retención configurable por slot;
-- hook de backup externo con timeout y auditoría;
+- cola durable de backup externo supervisada fuera de Gunicorn, con timeout, reintento y auditoría;
 - panel con estado observable del backup sin fingir que un snapshot remoto sigue existiendo.
 
 Save Sync **no fusiona mundos divergentes**. Si dos copias fueron modificadas de forma independiente, hay que elegir una de manera explícita.
@@ -53,7 +53,7 @@ Save Sync **no fusiona mundos divergentes**. Si dos copias fueron modificadas de
 
 La forma más cómoda para el PC Windows es descargar el ZIP del cliente desde la [última release](https://github.com/Ayerdi/dedicated-server-save-sync/releases/latest). Cada release publica también un archivo `.sha256`.
 
-Para producción usa **la misma release del producto** en cliente y backend. El backend estable debe desplegarse desde el tag `v2.2.0`, no desde la punta cambiante de `main`.
+Para producción usa **la misma release del producto** en cliente y backend. El backend estable debe desplegarse desde el tag `v2.2.1`, no desde la punta cambiante de `main`.
 
 ## Inicio rápido
 
@@ -67,7 +67,7 @@ Requisitos de producción:
 - Traefik + ForwardAuth/AuthentiK para el panel, o modo API-only.
 
 ```bash
-git clone --branch v2.2.0 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
+git clone --branch v2.2.1 --depth 1 https://github.com/Ayerdi/dedicated-server-save-sync.git
 cd dedicated-server-save-sync
 config/deploy.sh --init-env
 ```
@@ -86,7 +86,7 @@ bash scripts/local-e2e.sh
 
 ### 2. Cliente Windows
 
-1. Descarga `dedicated-server-save-sync-client-v2.2.0.zip` y su `.sha256` desde Releases.
+1. Descarga `dedicated-server-save-sync-client-v2.2.1.zip` y su `.sha256` desde Releases.
 2. Verifica el checksum antes de extraerlo.
 3. Copia `client/config.example.json` a `client/config.json`.
 4. Configura la URL pública, la ruta de PalServer y `Adapter=palworld`.
@@ -97,7 +97,7 @@ bash scripts/local-e2e.sh
 En PowerShell puedes verificar el paquete así:
 
 ```powershell
-$zip = 'dedicated-server-save-sync-client-v2.2.0.zip'
+$zip = 'dedicated-server-save-sync-client-v2.2.1.zip'
 $expected = ((Get-Content "$zip.sha256") -split '\s+')[0].ToLowerInvariant()
 $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw 'El SHA-256 del cliente no coincide.' }
@@ -118,7 +118,9 @@ Consulta [client/README.md](client/README.md) y [docs/OPERATIONS.md](docs/OPERAT
 
 `SAVE_SYNC_RETENTION_PER_SLOT` limita cuántas versiones operativas se conservan por host/slot.
 
-`SAVE_SYNC_POST_PUBLISH_COMMAND` permite lanzar un backup externo después de una publicación confirmada, por ejemplo con `restic`. El hook no puede convertir un upload ya confirmado en error: su resultado se audita por separado.
+`SAVE_SYNC_POST_PUBLISH_COMMAND` define el backup externo posterior a una publicación confirmada, por ejemplo con `restic`. El backend encola el trabajo en SQLite y un sidecar `backup-supervisor` independiente de Gunicorn lo ejecuta, aplica timeout y conserva la fila para reintento si el supervisor cae. El comando debe permanecer en foreground y ser idempotente o tolerar ejecuciones repetidas.
+
+Una versión con backup pendiente queda protegida frente a retención hasta obtener un resultado final conocido. La eliminación física de ZIPs ocurre después de confirmar la metadata de retención y revalidar referencias, de forma que un crash pueda dejar un archivo huérfano recuperable, pero no metadata confirmada apuntando a un ZIP borrado por una transacción revertida.
 
 El panel y `GET /backup-status` distinguen:
 
@@ -139,7 +141,7 @@ No publiques nunca:
 - saves, ZIP, SQLite, logs completos ni rutas de producción;
 - GUID, IP, dominio o nombres personales reales cuando abras una incidencia.
 
-El repositorio ejecuta Ruff, pytest con cobertura mínima del 85 %, `pip-audit`, Docker E2E, Pester y Gitleaks sobre el historial Git.
+El repositorio ejecuta Ruff, pytest con cobertura mínima del 85 %, `pip-audit`, Docker E2E —incluido crash/restart del supervisor—, Pester y Gitleaks sobre el historial Git.
 
 Para vulnerabilidades usa [SECURITY.md](SECURITY.md). Para soporte no sensible usa [GitHub Discussions](https://github.com/Ayerdi/dedicated-server-save-sync/discussions) o las [incidencias](https://github.com/Ayerdi/dedicated-server-save-sync/issues).
 

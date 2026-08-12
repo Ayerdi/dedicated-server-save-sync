@@ -1,7 +1,7 @@
 # Cliente Windows
 
-1. Descarga `dedicated-server-save-sync-client-v2.2.0.zip` y su `.sha256` desde
-   la release `v2.2.0`.
+1. Descarga `dedicated-server-save-sync-client-v2.2.1.zip` y su `.sha256` desde
+   la release `v2.2.1`.
 2. Verifica el SHA-256 antes de extraer el ZIP.
 3. Copia `client/config.example.json` como `client/config.json`.
 4. Configura URL, PalServer y `Adapter=palworld`.
@@ -12,7 +12,7 @@
 Ejemplo de verificación en PowerShell:
 
 ```powershell
-$zip = 'dedicated-server-save-sync-client-v2.2.0.zip'
+$zip = 'dedicated-server-save-sync-client-v2.2.1.zip'
 $expected = ((Get-Content "$zip.sha256") -split '\s+')[0].ToLowerInvariant()
 $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw 'El SHA-256 del cliente no coincide.' }
@@ -25,4 +25,4 @@ en el router.
 
 > El adaptador Palworld muestra internamente `clientVersion=1.2.0`. Esa es la
 > versión del componente/adaptador Windows y no el número de la release del
-> producto. El paquete estable que contiene ese adaptador es `v2.2.0`.
+> producto. El paquete estable que contiene ese adaptador es `v2.2.1`.

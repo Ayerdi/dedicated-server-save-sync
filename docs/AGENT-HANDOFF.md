@@ -1,7 +1,7 @@
 # Guía de mantenimiento para agentes y contribuidores
 
 Este documento resume el contexto mínimo para trabajar en la referencia estable
-de Palworld sin romper sus invariantes. `v2.2.0` está en mantenimiento; el
+de Palworld sin romper sus invariantes. `v2.2.1` está en mantenimiento; el
 rediseño multi-juego de producto se desarrolla fuera de este repositorio.
 
 ## Orden de lectura
@@ -11,8 +11,9 @@ rediseño multi-juego de producto se desarrolla fuera de este repositorio.
 3. `docs/API.md`
 4. `client/README.md`
 5. `save_sync/app.py`
-6. `client/SyncGame.ps1`
-7. `client/adapters/palworld/Adapter.ps1`
+6. `save_sync/backup_supervisor.py`
+7. `client/SyncGame.ps1`
+8. `client/adapters/palworld/Adapter.ps1`
 
 `docs/ADAPTING-OTHER-GAMES.md` se conserva como referencia del diseño genérico,
 no como roadmap activo de soporte.
@@ -25,6 +26,8 @@ no como roadmap activo de soporte.
 - El proceso del juego debe estar cerrado antes de comprimir.
 - El cliente no continúa jugando si pierde la exclusión de forma persistente.
 - Los fallos conservan save, ZIP pendiente y versión vigente.
+- Los backups pendientes permanecen en SQLite y protegen su ZIP hasta un resultado final.
+- La retención confirma metadata antes de eliminar físicamente ZIPs revalidados como huérfanos.
 - Tokens, contraseñas, saves, bases de datos y configuraciones personales no se
   versionan ni se incluyen en logs.
 - La REST local de Palworld no se expone a Internet.

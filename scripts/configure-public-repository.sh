@@ -4,10 +4,11 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 REPOSITORY="${SAVE_SYNC_GITHUB_REPOSITORY:-Ayerdi/dedicated-server-save-sync}"
 PAGES_URL="${SAVE_SYNC_PAGES_URL:-https://ayerdi.github.io/dedicated-server-save-sync/}"
-RELEASE_COMMIT="b085453f4bdd39d7c336980b0a27ce79605aa7a2"
-RELEASE_ZIP="dedicated-server-save-sync-client-v2.2.0.zip"
+RELEASE_VERSION="2.2.1"
+RELEASE_TAG="v${RELEASE_VERSION}"
+RELEASE_ZIP="dedicated-server-save-sync-client-v${RELEASE_VERSION}.zip"
 RELEASE_CHECKSUM="${RELEASE_ZIP}.sha256"
-RELEASE_ZIP_DIGEST="sha256:4d07ce1eb70f79471dca8d5f1ed9c4d7a37aaebbf53f5668d84be2058a781494"
+RELEASE_ZIP_DIGEST="sha256:4ee67ecdb617374c74f39db3819d6a6dae50618111102fa8a196c3f2beceacfc"
 
 if [[ "${1:-}" != "--apply" || $# -ne 1 ]]; then
   printf 'Uso: %s --apply\n' "$0" >&2
@@ -41,12 +42,23 @@ fi
   exit 1
 }
 
-git fetch --quiet origin main
+git fetch --quiet origin main --tags
 head_sha="$(git rev-parse HEAD)"
 remote_sha="$(git rev-parse origin/main)"
 if [[ "${head_sha}" != "${remote_sha}" ]]; then
   printf 'HEAD (%s) no coincide con origin/main (%s). Actualiza el checkout.\n' \
     "${head_sha}" "${remote_sha}" >&2
+  exit 1
+fi
+
+tag_commit="$(git rev-list -n1 "${RELEASE_TAG}" 2>/dev/null || true)"
+if [[ -z "${tag_commit}" ]]; then
+  printf 'No existe el tag auditado %s.\n' "${RELEASE_TAG}" >&2
+  exit 1
+fi
+if ! git merge-base --is-ancestor "${tag_commit}" "${head_sha}"; then
+  printf 'El tag %s (%s) no es ancestro del main actual (%s).\n' \
+    "${RELEASE_TAG}" "${tag_commit}" "${head_sha}" >&2
   exit 1
 fi
 
@@ -59,7 +71,7 @@ if [[ "${ci_state}" != "${head_sha}:completed:success" ]]; then
   exit 1
 fi
 
-release_api="repos/${REPOSITORY}/releases/tags/v2.2.0"
+release_api="repos/${REPOSITORY}/releases/tags/${RELEASE_TAG}"
 release_target="$(gh api "${release_api}" --jq '.target_commitish // ""')"
 release_draft="$(gh api "${release_api}" --jq '.draft')"
 release_prerelease="$(gh api "${release_api}" --jq '.prerelease')"
@@ -67,16 +79,18 @@ release_assets="$(gh api "${release_api}" --jq '[.assets[].name] | sort | join("
 zip_digest="$(gh api "${release_api}" --jq ".assets[] | select(.name == \"${RELEASE_ZIP}\") | (.digest // \"\")")"
 expected_assets="$(printf '%s\n%s\n' "${RELEASE_ZIP}" "${RELEASE_CHECKSUM}" | sort | paste -sd, -)"
 
-if [[ "${release_target}" != "${RELEASE_COMMIT}" || \
+if [[ "${release_target}" != "${tag_commit}" || \
       "${release_draft}" != "false" || "${release_prerelease}" != "false" || \
       "${release_assets}" != "${expected_assets}" || \
       "${zip_digest}" != "${RELEASE_ZIP_DIGEST}" ]]; then
   cat >&2 <<EOF
-La release v2.2.0 no coincide con el candidato auditado.
-  target: ${release_target}
+La release ${RELEASE_TAG} no coincide con el candidato auditado.
+  tag commit: ${tag_commit}
+  release target: ${release_target}
   draft/prerelease: ${release_draft}/${release_prerelease}
   assets: ${release_assets}
   ZIP digest: ${zip_digest}
+  esperado: ${RELEASE_ZIP_DIGEST}
 No se aplicará la configuración pública.
 EOF
   exit 1
@@ -139,7 +153,7 @@ gh api --method PUT "repos/${REPOSITORY}/pages" \
   -F https_enforced=true >/dev/null
 
 printf 'Configuración pública aplicada a %s.\n' "${REPOSITORY}"
-printf 'Release v2.2.0 verificada: %s\n' "${RELEASE_ZIP_DIGEST}"
+printf 'Release %s verificada: %s\n' "${RELEASE_TAG}" "${RELEASE_ZIP_DIGEST}"
 printf 'GitHub Pages: %s\n' "${PAGES_URL}"
 printf 'Disparando despliegue de Pages...\n'
 gh workflow run pages.yml --repo "${REPOSITORY}" --ref main

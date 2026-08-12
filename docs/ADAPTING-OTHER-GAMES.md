@@ -1,6 +1,6 @@
 # Adaptar el patrón a otros juegos
 
-> **Referencia técnica, no soporte estable.** `v2.2.0` se publica y mantiene
+> **Referencia técnica, no soporte estable.** `v2.2.1` se publica y mantiene
 > como implementación de referencia para Palworld. Este documento conserva el
 > diseño genérico existente y los requisitos que una adaptación debería cumplir;
 > no implica que este repositorio acepte nuevos juegos en su roadmap de

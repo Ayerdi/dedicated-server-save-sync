@@ -1,0 +1,97 @@
+name: Publish v2.2.1
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release-v2.2.1.yml'
+      - 'client/**'
+      - 'CHANGELOG.md'
+      - 'LICENSE'
+      - 'SECURITY.md'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/release-v2.2.1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Repository safety check
+        run: bash scripts/check-repository.sh
+      - name: Build deterministic client twice
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash scripts/build-release.sh 2.2.1
+          archive='dist/dedicated-server-save-sync-client-v2.2.1.zip'
+          checksum="${archive}.sha256"
+          first="$(cut -d' ' -f1 "${checksum}")"
+          first_copy="$(mktemp /tmp/save-sync-v2.2.1.XXXXXX.zip)"
+          trap 'rm -f -- "${first_copy}"' EXIT
+          cp "${archive}" "${first_copy}"
+          rm -f "${archive}" "${checksum}"
+          bash scripts/build-release.sh 2.2.1
+          second="$(cut -d' ' -f1 "${checksum}")"
+          test "${first}" = "${second}"
+          cmp "${first_copy}" "${archive}"
+          printf 'V2_2_1_SHA256=%s\n' "${second}"
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: calibrate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Refuse an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v2.2.1 >/dev/null 2>&1; then
+            echo 'v2.2.1 already exists; refusing to replace it.' >&2
+            exit 1
+          fi
+      - name: Rebuild and publish exact release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash scripts/check-repository.sh
+          bash scripts/build-release.sh 2.2.1
+          archive='dist/dedicated-server-save-sync-client-v2.2.1.zip'
+          checksum="${archive}.sha256"
+          first="$(cut -d' ' -f1 "${checksum}")"
+          first_copy="$(mktemp /tmp/save-sync-v2.2.1-publish.XXXXXX.zip)"
+          trap 'rm -f -- "${first_copy}"' EXIT
+          cp "${archive}" "${first_copy}"
+          rm -f "${archive}" "${checksum}"
+          bash scripts/build-release.sh 2.2.1
+          second="$(cut -d' ' -f1 "${checksum}")"
+          test "${first}" = "${second}"
+          cmp "${first_copy}" "${archive}"
+          printf 'Publishing V2_2_1_SHA256=%s\n' "${second}"
+          gh release create v2.2.1 \
+            "${archive}" \
+            "${checksum}" \
+            --target "${GITHUB_SHA}" \
+            --title 'v2.2.1 — Durable backup hardening' \
+            --notes-file docs/RELEASE-NOTES-v2.2.1.md
+          uploaded_digest="$(gh api 'repos/${{ github.repository }}/releases/tags/v2.2.1' \
+            --jq ".assets[] | select(.name == \"$(basename "${archive}")\") | (.digest // \"\")")"
+          test "${uploaded_digest}" = "sha256:${second}"
+          printf 'GitHub digest: %s\n' "${uploaded_digest}"
