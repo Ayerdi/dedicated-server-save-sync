@@ -8,17 +8,15 @@ import sqlite3
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from save_sync.retention import cleanup_canonical_versions_locked
-
 
 LOGGER = logging.getLogger("save-sync-backup-supervisor")
 
 
 def utc_iso():
-    from datetime import datetime, timezone
-
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
@@ -36,11 +34,15 @@ def load_identities(raw):
     except (TypeError, json.JSONDecodeError) as exc:
         raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON no es JSON válido") from exc
     if not isinstance(value, dict):
-        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON debe ser un objeto JSON")
+        raise RuntimeError(  # noqa: TRY004
+            "SAVE_SYNC_USER_IDENTITIES_JSON debe ser un objeto JSON"
+        )
     result = {}
     for username, profile in value.items():
         if not isinstance(profile, dict):
-            raise RuntimeError(f"Perfil de identidad inválido para {username}")
+            raise RuntimeError(  # noqa: TRY004
+                f"Perfil de identidad inválido para {username}"
+            )
         display = str(profile.get("displayName", "")).strip()
         slot = str(profile.get("slot", "")).strip()
         if not str(username).strip() or not display or not slot:
