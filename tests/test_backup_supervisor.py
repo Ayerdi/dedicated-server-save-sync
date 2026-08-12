@@ -1,7 +1,6 @@
 import json
 import sqlite3
 import subprocess
-from pathlib import Path
 
 from save_sync import create_app
 from save_sync.backup_supervisor import BackupSupervisor
@@ -27,7 +26,14 @@ def bootstrap_storage(tmp_path, retention=1):
     return app, storage, db_path
 
 
-def queue_version(app, storage, version, *, username="admin", queued_at="2026-01-01T00:00:00Z"):
+def queue_version(
+    app,
+    storage,
+    version,
+    *,
+    username="admin",
+    queued_at="2026-01-01T00:00:00Z",
+):
     relative = f"backups/save-v{version:06d}.zip"
     payload = f"version-{version}".encode()
     (storage / relative).write_bytes(payload)
