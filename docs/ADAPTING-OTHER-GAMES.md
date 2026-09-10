@@ -2,7 +2,7 @@
 
 > **Technical reference, not stable support.** `v2.2.2` is published and maintained as the Palworld reference implementation. This document preserves the generic design decisions and requirements another adapter would need to satisfy. The future multi-game/device-sync product will be developed separately.
 
-The development tree includes an experimental `valheim` adapter that exercises this contract against Valheim 1.0 folder-based world saves. It is intentionally isolated from the stable Palworld adapter and remains experimental until the real two-host acceptance checklist passes.
+The development tree includes an experimental `valheim` adapter that exercises this contract against Valheim 1.0 folder-based world saves. It is intentionally isolated from the stable Palworld adapter and remains experimental until the real four-host acceptance checklist passes.
 
 ## Reusable primitives
 

@@ -5,6 +5,7 @@ import subprocess
 import pytest
 
 from save_sync import create_app
+from save_sync.app import SCHEMA_VERSION
 from save_sync.backup_supervisor import BackupSupervisor, healthcheck
 
 WORLD_GUID = "A7E97BAA767DB9029EF013BB71E993A0"
@@ -79,7 +80,7 @@ def test_schema_ready_rejects_missing_and_future_database(tmp_path):
     worker = supervisor(storage, db_path)
     assert worker.schema_ready() is True
     with app.extensions["save_sync_connect"]() as db:
-        db.execute("PRAGMA user_version=4")
+        db.execute(f"PRAGMA user_version={SCHEMA_VERSION + 1}")
     assert worker.schema_ready() is False
 
 

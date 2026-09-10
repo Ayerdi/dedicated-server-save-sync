@@ -15,7 +15,7 @@
 - [Migrations](MIGRATIONS.md) — schema versioning, backups and rollback.
 - [Multi-game design reference](ADAPTING-OTHER-GAMES.md) — generic abstractions kept for future work, not an active support promise.
 - [Real Palworld acceptance test](../client/MANUAL-ACCEPTANCE.md) — controlled two-host regression procedure.
-- [Experimental Valheim acceptance test](../client/MANUAL-ACCEPTANCE-VALHEIM.md) — folder-save, CTRL+C shutdown and A→B→A validation.
+- [Experimental Valheim acceptance test](../client/MANUAL-ACCEPTANCE-VALHEIM.md) — folder-save, CTRL+C shutdown and A→B→C→D→A validation.
 
 ## Maintenance and releases
 

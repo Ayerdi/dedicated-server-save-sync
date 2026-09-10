@@ -27,6 +27,8 @@ The backend does not infer compatibility from `clientVersion`. In production, de
 
 For experimental Valheim testing, copy `config.valheim.example.json` to `config.json`, configure the dedicated-server paths and `WorldName`, run the same secret/connection helpers, then start with `Start-ValheimSync.cmd`. Valheim credentials are stored separately under `data/valheim/`.
 
+For a multi-PC Valheim group, register every possible server PC from the Save Sync web panel first. Give each machine a distinct stable `ClientId` and its own computer-bound token; four or more PCs may alternate against the same authoritative world, but the global lock permits only one active server session at a time.
+
 The older `Configurar-secretos.cmd`, `Probar-conexion.cmd` and `Iniciar-PalworldSync.cmd` names remain as compatibility aliases.
 
 Do not copy DPAPI secret files between machines: Palworld uses `data/secrets.json` and Valheim uses `data/valheim/secrets.json`. DPAPI binds them to the Windows user and machine that created them.

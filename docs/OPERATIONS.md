@@ -44,8 +44,8 @@ Save Sync v2 must not be pointed directly at a legacy Palworld Sync v1 database.
 | `SAVE_SYNC_AUTHENTIK_FORWARD_AUTH_URL` | Internal ForwardAuth endpoint |
 | `SAVE_SYNC_PANEL_MODE` | `authentik` or `disabled` |
 | `SAVE_SYNC_TRAEFIK_CERT_RESOLVER` | Existing Traefik TLS resolver |
-| `SAVE_SYNC_WEB_USERS` | `username:role` allowlist |
-| `SAVE_SYNC_USER_IDENTITIES_JSON` | Display names and retention slots |
+| `SAVE_SYNC_WEB_USERS` | `username:role` allowlist; bootstrap-only when the game enables `managedHosts` |
+| `SAVE_SYNC_USER_IDENTITIES_JSON` | Display names/retention slots; bootstrap-only when the game enables `managedHosts` |
 | `SAVE_SYNC_MAX_UPLOAD_SIZE` | Maximum ZIP size |
 | `SAVE_SYNC_LOCK_TTL_SECONDS` | Lock TTL; default 300 |
 | `SAVE_SYNC_HEARTBEAT_INTERVAL_SECONDS` | Recommended client heartbeat; default 60 |
@@ -57,6 +57,10 @@ Save Sync v2 must not be pointed directly at a legacy Palworld Sync v1 database.
 | `SAVE_SYNC_CSRF_SECRET` | Panel CSRF signing secret |
 
 The two final secrets must be independent, random values of at least 32 characters and must never appear in logs or Git.
+
+When `game.json` enables `managedHosts`, `SAVE_SYNC_WEB_USERS` and `SAVE_SYNC_USER_IDENTITIES_JSON` seed users that do not already exist. Schema 4 then makes the database authoritative for subsequent role, display-name, slot and enabled/disabled changes, so restarting the container does not overwrite panel-managed access. Authentik still authenticates the username; Save Sync decides whether that username is active and which computers it may use. With `managedHosts` disabled, as in Palworld, the existing config-managed access behavior is preserved.
+
+For games with `managedHosts` enabled, administrators can manage users, computers and computer-bound API tokens from `/games/<gameKey>`. Register each physical PC with a unique stable `ClientId`, then create a token for that computer and put that token only on that PC. Managed lock acquisition requires a computer-bound token whose registered `ClientId` exactly matches the client request. Legacy unbound tokens remain visible for migration/administration but cannot start a managed game session and should be rotated.
 
 ## Durable external backup and retention
 

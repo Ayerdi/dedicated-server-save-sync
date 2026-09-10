@@ -79,11 +79,13 @@ A singleton `flock` prevents two supervisors from consuming the same storage con
 
 - SQLite uses WAL mode and `busy_timeout`.
 - Schema creation/migration is protected by a multiprocess `flock`.
-- `PRAGMA user_version=3` identifies the supported schema.
+- `PRAGMA user_version=4` identifies the supported schema.
 - A newer schema is rejected rather than implicitly downgraded.
 - Two simultaneous lock acquisitions produce one winner.
 - Two uploads based on the same version cannot both publish.
 - Backup queue insertion and publication share one SQLite commit, so a confirmed version cannot require backup without having been queued.
+
+When a game configuration opts in with `managedHosts: true`, managed access separates people from machines. `users` represent identities authenticated by Authentik; `authorized_hosts` represent concrete computers through a stable `clientId`. A computer-bound Bearer token is valid only for its assigned active host and never grants administrative API privileges, even when the owning user is an administrator. Disabling a host does not delete an active lock: the client fails its next authenticated heartbeat and stops, while the lock remains until normal expiry or an explicit administrative force-unlock. The experimental Valheim configuration enables this capability; Palworld leaves it disabled so its stable UI and client authorization flow are unchanged.
 
 Each deployment manages one `gameKey` and uses one database and storage root. Another game must use another isolated Compose project/volume in this reference architecture.
 

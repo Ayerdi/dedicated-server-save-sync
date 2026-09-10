@@ -30,7 +30,7 @@ from save_sync.retention import (
 )
 
 GAME_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def utcnow():
@@ -65,16 +65,22 @@ SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS users (
- id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, role TEXT NOT NULL CHECK(role IN ('admin','player')), active INTEGER NOT NULL DEFAULT 1
+ id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, role TEXT NOT NULL CHECK(role IN ('admin','player')), active INTEGER NOT NULL DEFAULT 1,
+ display_name TEXT, slot TEXT
+);
+CREATE TABLE IF NOT EXISTS authorized_hosts (
+ id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), client_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+ active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)), created_at TEXT NOT NULL, last_seen_at TEXT, last_published_at TEXT
 );
 CREATE TABLE IF NOT EXISTS api_tokens (
  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
- created_at TEXT NOT NULL, last_used_at TEXT, revoked_at TEXT
+ created_at TEXT NOT NULL, last_used_at TEXT, revoked_at TEXT, host_id INTEGER REFERENCES authorized_hosts(id)
 );
 CREATE TABLE IF NOT EXISTS versions (
  version INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL, size INTEGER NOT NULL,
  updated_by INTEGER NOT NULL REFERENCES users(id), updated_at TEXT NOT NULL, base_version INTEGER NOT NULL,
- restored_from_version INTEGER, save_identity TEXT NOT NULL CHECK(length(save_identity) BETWEEN 1 AND 256)
+ restored_from_version INTEGER, save_identity TEXT NOT NULL CHECK(length(save_identity) BETWEEN 1 AND 256),
+ host_id INTEGER REFERENCES authorized_hosts(id)
 );
 CREATE TABLE IF NOT EXISTS current_save (
  singleton INTEGER PRIMARY KEY CHECK(singleton=1), version INTEGER NOT NULL REFERENCES versions(version)
@@ -82,7 +88,8 @@ CREATE TABLE IF NOT EXISTS current_save (
 CREATE TABLE IF NOT EXISTS active_lock (
  singleton INTEGER PRIMARY KEY CHECK(singleton=1), session_hash TEXT NOT NULL UNIQUE,
  owner_user_id INTEGER NOT NULL REFERENCES users(id), token_id INTEGER REFERENCES api_tokens(id), owner_label TEXT NOT NULL, client_id TEXT NOT NULL,
- base_version INTEGER NOT NULL, created_at TEXT NOT NULL, last_heartbeat_at TEXT NOT NULL, expires_at TEXT NOT NULL
+ base_version INTEGER NOT NULL, created_at TEXT NOT NULL, last_heartbeat_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+ host_id INTEGER REFERENCES authorized_hosts(id)
 );
 CREATE TABLE IF NOT EXISTS audit (
  id INTEGER PRIMARY KEY, event TEXT NOT NULL, user_id INTEGER, at TEXT NOT NULL, success INTEGER NOT NULL,
@@ -132,6 +139,7 @@ DEFAULT_GAME = {
     "identityNormalization": "uppercase",
     "identityKind": "string",
     "legacyPalworldRoutes": True,
+    "managedHosts": False,
 }
 
 
@@ -187,6 +195,7 @@ def create_app(config=None):
     if not game.get("identityPattern"):
         raise RuntimeError("identityPattern is required")
     legacy_palworld = bool(game.get("legacyPalworldRoutes", False))
+    managed_hosts = bool(game.get("managedHosts", False))
 
     def normalize_identity_value(value):
         raw = str(value or "").strip()
@@ -286,12 +295,28 @@ def create_app(config=None):
         # allows adding an initially nullable column.
         db.execute("BEGIN IMMEDIATE")
         try:
+            user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
+            if "display_name" not in user_columns:
+                db.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
+            if "slot" not in user_columns:
+                db.execute("ALTER TABLE users ADD COLUMN slot TEXT")
+            token_columns = {
+                row[1] for row in db.execute("PRAGMA table_info(api_tokens)")
+            }
+            if "host_id" not in token_columns:
+                db.execute(
+                    "ALTER TABLE api_tokens ADD COLUMN host_id INTEGER REFERENCES authorized_hosts(id)"
+                )
             lock_columns = {
                 row[1] for row in db.execute("PRAGMA table_info(active_lock)")
             }
             if "token_id" not in lock_columns:
                 db.execute(
                     "ALTER TABLE active_lock ADD COLUMN token_id INTEGER REFERENCES api_tokens(id)"
+                )
+            if "host_id" not in lock_columns:
+                db.execute(
+                    "ALTER TABLE active_lock ADD COLUMN host_id INTEGER REFERENCES authorized_hosts(id)"
                 )
             version_columns = {
                 row[1] for row in db.execute("PRAGMA table_info(versions)")
@@ -303,6 +328,20 @@ def create_app(config=None):
                 )
             if "save_identity" not in version_columns:
                 db.execute("ALTER TABLE versions ADD COLUMN save_identity TEXT")
+            if "host_id" not in version_columns:
+                db.execute(
+                    "ALTER TABLE versions ADD COLUMN host_id INTEGER REFERENCES authorized_hosts(id)"
+                )
+            for row in db.execute("SELECT id,username,display_name,slot FROM users"):
+                profile = identities.get(
+                    row["username"].casefold(),
+                    {"displayName": row["username"], "slot": row["username"].casefold()},
+                )
+                db.execute(
+                    "UPDATE users SET display_name=COALESCE(NULLIF(display_name,''),?), "
+                    "slot=COALESCE(NULLIF(slot,''),?) WHERE id=?",
+                    (profile["displayName"], profile["slot"], row["id"]),
+                )
             for trigger_sql in (
                 """
                 CREATE TRIGGER IF NOT EXISTS versions_save_identity_insert
@@ -356,10 +395,31 @@ def create_app(config=None):
             )
         for item in app.config["SAVE_SYNC_WEB_USERS"].split(","):
             username, role = item.strip().split(":", 1)
-            db.execute(
-                "INSERT INTO users(username,role) VALUES(?,?) ON CONFLICT(username) DO UPDATE SET role=excluded.role",
-                (username, role),
+            profile = identities.get(
+                username.casefold(),
+                {"displayName": username, "slot": username.casefold()},
             )
+            if managed_hosts:
+                existing_user = db.execute(
+                    "SELECT id FROM users WHERE username=? COLLATE NOCASE", (username,)
+                ).fetchone()
+                if not existing_user:
+                    db.execute(
+                        "INSERT INTO users(username,role,display_name,slot) VALUES(?,?,?,?)",
+                        (username, role, profile["displayName"], profile["slot"]),
+                    )
+                db.execute(
+                    "UPDATE users SET display_name=COALESCE(NULLIF(display_name,''),?), "
+                    "slot=COALESCE(NULLIF(slot,''),?) WHERE username=? COLLATE NOCASE",
+                    (profile["displayName"], profile["slot"], username),
+                )
+            else:
+                db.execute(
+                    "INSERT INTO users(username,role,display_name,slot) VALUES(?,?,?,?) "
+                    "ON CONFLICT(username) DO UPDATE SET role=excluded.role,"
+                    "display_name=excluded.display_name,slot=excluded.slot",
+                    (username, role, profile["displayName"], profile["slot"]),
+                )
         bootstrap = os.environ.get("SAVE_SYNC_BOOTSTRAP_TOKENS_JSON")
         if bootstrap:
             for item in json.loads(bootstrap):
@@ -395,6 +455,10 @@ def create_app(config=None):
             username.casefold(),
             {"displayName": username, "slot": username.casefold()},
         )
+
+    def display_from_values(username, persisted=None):
+        persisted = str(persisted or "").strip()
+        return persisted or identity_for_username(username)["displayName"]
 
     retention_per_slot = int(app.config["SAVE_SYNC_RETENTION_PER_SLOT"])
     backup_timeout = int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"])
@@ -628,17 +692,18 @@ def create_app(config=None):
         if not username:
             return None, "identity_required"
         user = db.execute(
-            "SELECT * FROM users WHERE username=? AND active=1", (username,)
+            "SELECT * FROM users WHERE username=? COLLATE NOCASE AND active=1", (username,)
         ).fetchone()
         if not user:
             return None, "web_user_not_allowed"
         return user, None
 
-    def display_username(username):
-        return identity_for_username(username)["displayName"]
+    def display_username(username, persisted=None):
+        return display_from_values(username, persisted)
 
     def display_name(user):
-        return display_username(user["username"])
+        persisted = dict(user).get("display_name")
+        return display_username(user["username"], persisted)
 
     def csrf_value(username):
         secret = app.config.get("SAVE_SYNC_CSRF_SECRET") or os.environ.get(
@@ -664,9 +729,23 @@ def create_app(config=None):
             if not alias_web and auth.startswith("Bearer "):
                 token_hash = digest(auth[7:])
                 user = db.execute(
-                    "SELECT u.*,t.id token_id FROM api_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=? AND t.revoked_at IS NULL AND u.active=1",
+                    "SELECT u.*,t.id token_id,t.host_id token_host_id,h.active token_host_active "
+                    "FROM api_tokens t JOIN users u ON u.id=t.user_id "
+                    "LEFT JOIN authorized_hosts h ON h.id=t.host_id "
+                    "WHERE t.token_hash=? AND t.revoked_at IS NULL AND u.active=1",
                     (token_hash,),
                 ).fetchone()
+                if (
+                    managed_hosts
+                    and user
+                    and user["token_host_id"] is not None
+                    and user["token_host_active"] != 1
+                ):
+                    return None, error(
+                        "host_disabled",
+                        "This computer is disabled for Save Sync.",
+                        403,
+                    )
                 if user:
                     db.execute(
                         "UPDATE api_tokens SET last_used_at=? WHERE id=?",
@@ -690,6 +769,17 @@ def create_app(config=None):
             if not user:
                 return None, error(
                     "authentication_required", "Valid authentication is required.", 401
+                )
+            if (
+                managed_hosts
+                and
+                require_admin
+                and dict(user).get("token_host_id") is not None
+            ):
+                return None, error(
+                    "forbidden",
+                    "Computer-bound API tokens cannot perform administrative operations.",
+                    403,
                 )
             if require_admin and user["role"] != "admin":
                 return None, error(
@@ -822,9 +912,76 @@ def create_app(config=None):
     def normalize_save_identity(value):
         return normalize_identity_value(value)
 
+    def current_managed_token(db, user):
+        """Revalidates managed-session access inside the caller's transaction.
+
+        Bearer authentication happens before endpoint transactions. Managed game
+        operations therefore requery the user/token here so an administrator's
+        committed disable/revoke cannot be bypassed by an already-authenticated
+        request waiting to enter its lock/heartbeat transaction.
+        """
+        if not managed_hosts:
+            return None, None
+        token_id = dict(user).get("token_id")
+        if token_id is None:
+            return None, error(
+                "host_token_required",
+                "This game requires an API token bound to an authorized computer.",
+                403,
+            )
+        access = db.execute(
+            "SELECT u.active user_active,t.id token_id,t.revoked_at token_revoked_at,"
+            "t.host_id token_host_id FROM users u "
+            "LEFT JOIN api_tokens t ON t.id=? AND t.user_id=u.id WHERE u.id=?",
+            (token_id, user["id"]),
+        ).fetchone()
+        if (
+            not access
+            or access["user_active"] != 1
+            or access["token_id"] is None
+            or access["token_revoked_at"] is not None
+        ):
+            return None, error(
+                "access_revoked",
+                "This user's access or API token was revoked.",
+                403,
+            )
+        if access["token_host_id"] is None:
+            return None, error(
+                "host_token_required",
+                "This game requires an API token bound to an authorized computer.",
+                403,
+            )
+        return access, None
+
+    def resolve_authorized_host(db, user, client_id):
+        if not managed_hosts:
+            return None, None
+        access, access_error = current_managed_token(db, user)
+        if access_error:
+            return None, access_error
+        token_host_id = access["token_host_id"]
+        host = db.execute(
+            "SELECT * FROM authorized_hosts WHERE id=? AND user_id=? AND client_id=?",
+            (token_host_id, user["id"], client_id),
+        ).fetchone()
+        if host:
+            if host["active"] != 1:
+                return None, error(
+                    "host_disabled", "This computer is disabled for Save Sync.", 403
+                )
+            return host, None
+        return None, error(
+            "token_host_mismatch",
+            "This API token belongs to a different authorized computer.",
+            403,
+        )
+
     def active_lock(db, clear_expired=True):
         row = db.execute(
-            "SELECT l.*,u.username FROM active_lock l JOIN users u ON u.id=l.owner_user_id WHERE singleton=1"
+            "SELECT l.*,u.username,h.name host_name FROM active_lock l "
+            "JOIN users u ON u.id=l.owner_user_id "
+            "LEFT JOIN authorized_hosts h ON h.id=l.host_id WHERE singleton=1"
         ).fetchone()
         if row and parse_iso(row["expires_at"]) <= utcnow():
             if clear_expired:
@@ -840,12 +997,15 @@ def create_app(config=None):
         return row
 
     def lock_public(row):
-        return {
+        result = {
             "owner": row["owner_label"],
             "createdAt": row["created_at"],
             "lastHeartbeatAt": row["last_heartbeat_at"],
             "expiresAt": row["expires_at"],
         }
+        if managed_hosts:
+            result.update(clientId=row["client_id"], hostName=row["host_name"])
+        return result
 
     def validate_zip(path):
         if path.suffix.lower() != ".zip":
@@ -979,6 +1139,15 @@ def create_app(config=None):
 
         return deco
 
+    def managed_routes(rule, **options):
+        if managed_hosts:
+            return routes(rule, **options)
+
+        def deco(fn):
+            return fn
+
+        return deco
+
     def identity_json(value):
         payload = {"saveIdentity": value, identity_field: value}
         if legacy_palworld:
@@ -1020,6 +1189,15 @@ def create_app(config=None):
         with transaction(immediate=True) as db:
             version = current_version(db)
             lock = active_lock(db)
+            author = (
+                db.execute(
+                    "SELECT u.username,u.display_name,h.client_id,h.name host_name "
+                    "FROM users u LEFT JOIN authorized_hosts h ON h.id=? WHERE u.id=?",
+                    (version["host_id"], version["updated_by"]),
+                ).fetchone()
+                if version
+                else None
+            )
             result = {
                 "gameKey": game_key,
                 "game": display_game,
@@ -1029,17 +1207,17 @@ def create_app(config=None):
                 "sha256": version["sha256"] if version else None,
                 "size": version["size"] if version else 0,
                 "updatedAt": version["updated_at"] if version else None,
-                "updatedBy": display_username(
-                    db.execute(
-                        "SELECT username FROM users WHERE id=?",
-                        (version["updated_by"],),
-                    ).fetchone()[0]
-                )
-                if version
+                "updatedBy": display_username(author["username"], author["display_name"])
+                if author
                 else None,
                 "locked": bool(lock),
                 "lock": lock_public(lock) if lock else None,
             }
+            if managed_hosts:
+                result.update(
+                    updatedClientId=author["client_id"] if author else None,
+                    updatedHostName=author["host_name"] if author else None,
+                )
             result.update(identity_json(version["save_identity"] if version else None))
         return jsonify(result)
 
@@ -1071,6 +1249,17 @@ def create_app(config=None):
         now = utcnow()
         expires = now + timedelta(seconds=int(app.config["SAVE_SYNC_LOCK_TTL_SECONDS"]))
         with transaction(immediate=True) as db:
+            host, host_error = resolve_authorized_host(db, g.save_sync_user, client_id)
+            if host_error:
+                audit(
+                    db,
+                    "lock_rejected",
+                    g.save_sync_user,
+                    False,
+                    client_id,
+                    reason=host_error[0].get_json()["error"],
+                )
+                return host_error
             existing = active_lock(db)
             if existing:
                 audit(
@@ -1094,21 +1283,25 @@ def create_app(config=None):
             version = current_version(db)
             base = version["version"] if version else 0
             db.execute(
-                "INSERT INTO active_lock(singleton,session_hash,owner_user_id,token_id,owner_label,client_id,base_version,created_at,last_heartbeat_at,expires_at) VALUES(1,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO active_lock(singleton,session_hash,owner_user_id,token_id,owner_label,client_id,base_version,created_at,last_heartbeat_at,expires_at,host_id) VALUES(1,?,?,?,?,?,?,?,?,?,?)",
                 (
                     digest(session_id),
                     g.save_sync_user["id"],
-                    g.save_sync_user["token_id"]  # noqa: SIM401
-                    if "token_id" in g.save_sync_user
-                    else None,
+                    dict(g.save_sync_user).get("token_id"),
                     canonical_owner,
                     client_id,
                     base,
                     iso(now),
                     iso(now),
                     iso(expires),
+                    host["id"] if host else None,
                 ),
             )
+            if host:
+                db.execute(
+                    "UPDATE authorized_hosts SET last_seen_at=? WHERE id=?",
+                    (iso(now), host["id"]),
+                )
             audit(
                 db, "lock_acquired", g.save_sync_user, True, client_id, baseVersion=base
             )
@@ -1138,10 +1331,72 @@ def create_app(config=None):
                 audit(db, event, g.save_sync_user, False, reason="lock_expired")
                 return error("lock_expired", "The lock has expired.", 409)
             row = active_lock(db)
+            managed_access = None
+            if managed_hosts:
+                managed_access, access_error = current_managed_token(
+                    db, g.save_sync_user
+                )
+                if access_error:
+                    audit(
+                        db,
+                        event,
+                        g.save_sync_user,
+                        False,
+                        row["client_id"] if row else None,
+                        reason=access_error[0].get_json()["error"],
+                    )
+                    return access_error
+            if managed_hosts and row:
+                if row["host_id"] is None:
+                    audit(
+                        db,
+                        event,
+                        g.save_sync_user,
+                        False,
+                        row["client_id"],
+                        reason="managed_session_required",
+                    )
+                    return error(
+                        "managed_session_required",
+                        "This session predates managed computer authorization and cannot continue.",
+                        409,
+                    )
+                if row["host_id"] != managed_access["token_host_id"]:
+                    audit(
+                        db,
+                        event,
+                        g.save_sync_user,
+                        False,
+                        row["client_id"],
+                        reason="token_host_mismatch",
+                    )
+                    return error(
+                        "token_host_mismatch",
+                        "This API token belongs to a different authorized computer.",
+                        403,
+                    )
+                host = db.execute(
+                    "SELECT active FROM authorized_hosts WHERE id=?",
+                    (row["host_id"],),
+                ).fetchone()
+                if not host or host["active"] != 1:
+                    audit(
+                        db,
+                        event,
+                        g.save_sync_user,
+                        False,
+                        row["client_id"],
+                        reason="host_disabled",
+                    )
+                    return error(
+                        "host_disabled",
+                        "This computer was disabled while the session was active.",
+                        409,
+                    )
             same_token = row and (
                 row["token_id"] is None
                 or (
-                    "token_id" in g.save_sync_user
+                    dict(g.save_sync_user).get("token_id") is not None
                     and row["token_id"] == g.save_sync_user["token_id"]
                 )
             )
@@ -1169,6 +1424,11 @@ def create_app(config=None):
                     (iso(now), iso(expires)),
                 )
             audit(db, event, g.save_sync_user, True, row["client_id"])
+            if row["host_id"] is not None:
+                db.execute(
+                    "UPDATE authorized_hosts SET last_seen_at=? WHERE id=?",
+                    (iso(now), row["host_id"]),
+                )
         return jsonify(ok=True, **({"expiresAt": iso(expires)} if expires else {}))
 
     @routes("/heartbeat", methods=["POST"])
@@ -1295,14 +1555,6 @@ def create_app(config=None):
                     str(exc), "The ZIP failed the security validations.", 422
                 )
             with transaction(immediate=True) as db:
-                audit(
-                    db,
-                    "upload_started",
-                    g.save_sync_user,
-                    True,
-                    baseVersion=base,
-                    size=size,
-                )
                 current = current_version(db)
                 expected = current["version"] if current else 0
                 expected_save_identity = current["save_identity"] if current else None
@@ -1344,10 +1596,71 @@ def create_app(config=None):
                         {"expectedBaseVersion": expected, "receivedBaseVersion": base},
                     )
                 lock = active_lock(db)
+                if managed_hosts and lock:
+                    if lock["host_id"] is None:
+                        audit(
+                            db,
+                            "upload_failed",
+                            g.save_sync_user,
+                            False,
+                            lock["client_id"],
+                            reason="managed_session_required",
+                        )
+                        return error(
+                            "managed_session_required",
+                            "This session predates managed computer authorization and cannot publish.",
+                            409,
+                        )
+                    owner_access = db.execute(
+                        "SELECT u.active user_active,t.id token_id,t.revoked_at token_revoked_at,"
+                        "t.host_id token_host_id "
+                        "FROM users u LEFT JOIN api_tokens t ON t.id=? WHERE u.id=?",
+                        (lock["token_id"], lock["owner_user_id"]),
+                    ).fetchone()
+                    if (
+                        not owner_access
+                        or owner_access["user_active"] != 1
+                        or lock["token_id"] is None
+                        or owner_access["token_id"] is None
+                        or owner_access["token_revoked_at"] is not None
+                        or owner_access["token_host_id"] != lock["host_id"]
+                    ):
+                        audit(
+                            db,
+                            "upload_failed",
+                            g.save_sync_user,
+                            False,
+                            lock["client_id"],
+                            reason="access_revoked",
+                        )
+                        return error(
+                            "access_revoked",
+                            "This session's user or API token was revoked before publication.",
+                            409,
+                        )
+                if managed_hosts and lock:
+                    host = db.execute(
+                        "SELECT active FROM authorized_hosts WHERE id=?",
+                        (lock["host_id"],),
+                    ).fetchone()
+                    if not host or host["active"] != 1:
+                        audit(
+                            db,
+                            "upload_failed",
+                            g.save_sync_user,
+                            False,
+                            lock["client_id"],
+                            reason="host_disabled",
+                        )
+                        return error(
+                            "host_disabled",
+                            "This computer was disabled while the session was active.",
+                            409,
+                        )
                 same_token = lock and (
                     lock["token_id"] is None
                     or (
-                        "token_id" in g.save_sync_user
+                        dict(g.save_sync_user).get("token_id") is not None
                         and lock["token_id"] == g.save_sync_user["token_id"]
                     )
                 )
@@ -1369,6 +1682,15 @@ def create_app(config=None):
                         "The session does not exist, has expired or does not belong to the user.",
                         409,
                     )
+                audit(
+                    db,
+                    "upload_started",
+                    g.save_sync_user,
+                    True,
+                    lock["client_id"],
+                    baseVersion=base,
+                    size=size,
+                )
                 if lock["base_version"] != expected:
                     audit(
                         db,
@@ -1400,7 +1722,7 @@ def create_app(config=None):
                 fsync_directory(final.parent)
                 published_final = final
                 db.execute(
-                    "INSERT INTO versions(version,path,sha256,size,updated_by,updated_at,base_version,save_identity) VALUES(?,?,?,?,?,?,?,?)",
+                    "INSERT INTO versions(version,path,sha256,size,updated_by,updated_at,base_version,save_identity,host_id) VALUES(?,?,?,?,?,?,?,?,?)",
                     (
                         new_version,
                         relative,
@@ -1410,8 +1732,14 @@ def create_app(config=None):
                         iso(utcnow()),
                         base,
                         save_identity,
+                        lock["host_id"],
                     ),
                 )
+                if lock["host_id"] is not None:
+                    db.execute(
+                        "UPDATE authorized_hosts SET last_seen_at=?,last_published_at=? WHERE id=?",
+                        (iso(utcnow()), iso(utcnow()), lock["host_id"]),
+                    )
                 db.execute(
                     "INSERT INTO current_save(singleton,version) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET version=excluded.version",
                     (new_version,),
@@ -1425,6 +1753,7 @@ def create_app(config=None):
                     "upload_completed",
                     g.save_sync_user,
                     True,
+                    lock["client_id"],
                     version=new_version,
                     previousVersion=expected,
                     **identity_json(save_identity),
@@ -1466,19 +1795,23 @@ def create_app(config=None):
     def history():
         with transaction() as db:
             rows = db.execute(
-                "SELECT v.*,u.username FROM versions v JOIN users u ON u.id=v.updated_by ORDER BY version DESC"
+                "SELECT v.*,u.username,u.display_name,h.client_id,h.name host_name "
+                "FROM versions v JOIN users u ON u.id=v.updated_by "
+                "LEFT JOIN authorized_hosts h ON h.id=v.host_id ORDER BY version DESC"
             ).fetchall()
         versions = []
         for r in rows:
             item = {
                 "version": r["version"],
-                "updatedBy": display_username(r["username"]),
+                "updatedBy": display_username(r["username"], r["display_name"]),
                 "updatedAt": r["updated_at"],
                 "size": r["size"],
                 "sha256": r["sha256"],
                 "baseVersion": r["base_version"],
                 "restoredFromVersion": r["restored_from_version"],
             }
+            if managed_hosts:
+                item.update(clientId=r["client_id"], hostName=r["host_name"])
             item.update(identity_json(r["save_identity"]))
             versions.append(item)
         return jsonify(gameKey=game_key, identityField=identity_field, versions=versions)
@@ -1768,19 +2101,312 @@ def create_app(config=None):
             )
         return jsonify(ok=True, hadActiveLock=bool(row))
 
+    @managed_routes("/admin/users", methods=["GET", "POST"])
+    @secured(admin=True)
+    def admin_users():
+        if not managed_hosts:
+            return error("not_found", "Managed computers are not enabled for this game.", 404)
+        if request.method == "GET":
+            with transaction() as db:
+                rows = db.execute(
+                    "SELECT u.id,u.username,u.role,u.active,u.display_name,u.slot,"
+                    "COUNT(h.id) host_count,COALESCE(SUM(CASE WHEN h.active=1 THEN 1 ELSE 0 END),0) active_host_count,"
+                    "MAX(h.last_seen_at) last_seen_at,MAX(h.last_published_at) last_published_at "
+                    "FROM users u LEFT JOIN authorized_hosts h ON h.user_id=u.id "
+                    "GROUP BY u.id ORDER BY u.username COLLATE NOCASE"
+                ).fetchall()
+            return jsonify(
+                users=[
+                    {
+                        "id": row["id"],
+                        "username": row["username"],
+                        "displayName": display_username(
+                            row["username"], row["display_name"]
+                        ),
+                        "slot": row["slot"] or row["username"].casefold(),
+                        "role": row["role"],
+                        "active": bool(row["active"]),
+                        "hostCount": row["host_count"],
+                        "activeHostCount": row["active_host_count"],
+                        "lastSeenAt": row["last_seen_at"],
+                        "lastPublishedAt": row["last_published_at"],
+                    }
+                    for row in rows
+                ]
+            )
+        data = request.get_json(silent=True) or {}
+        username = str(data.get("username", "")).strip()
+        display = str(data.get("displayName", "")).strip()
+        slot = str(data.get("slot", "")).strip()
+        role = str(data.get("role", "player")).strip().lower()
+        if (
+            not username
+            or len(username) > 100
+            or not display
+            or len(display) > 100
+            or not slot
+            or len(slot) > 100
+            or role not in {"admin", "player"}
+        ):
+            return error(
+                "invalid_request",
+                "username, displayName and slot are required and role must be admin or player.",
+                400,
+            )
+        with transaction(immediate=True) as db:
+            if db.execute(
+                "SELECT 1 FROM users WHERE username=? COLLATE NOCASE", (username,)
+            ).fetchone():
+                return error("user_exists", "That user already exists.", 409)
+            cursor = db.execute(
+                "INSERT INTO users(username,role,active,display_name,slot) VALUES(?,?,1,?,?)",
+                (username, role, display, slot),
+            )
+            audit(
+                db,
+                "user_created",
+                g.save_sync_user,
+                True,
+                targetUserId=cursor.lastrowid,
+                username=username,
+                role=role,
+            )
+        return jsonify(
+            id=cursor.lastrowid,
+            username=username,
+            displayName=display,
+            slot=slot,
+            role=role,
+            active=True,
+        ), 201
+
+    @managed_routes("/admin/users/<int:user_id>", methods=["PATCH"])
+    @secured(admin=True)
+    def update_user(user_id):
+        if not managed_hosts:
+            return error("not_found", "Managed computers are not enabled for this game.", 404)
+        data = request.get_json(silent=True) or {}
+        allowed = {"displayName", "slot", "role", "active"}
+        if not data or any(key not in allowed for key in data):
+            return error("invalid_request", "No supported user fields were supplied.", 400)
+        updates = {}
+        if "displayName" in data:
+            value = str(data["displayName"]).strip()
+            if not value or len(value) > 100:
+                return error("invalid_request", "displayName must be 1-100 characters.", 400)
+            updates["display_name"] = value
+        if "slot" in data:
+            value = str(data["slot"]).strip()
+            if not value or len(value) > 100:
+                return error("invalid_request", "slot must be 1-100 characters.", 400)
+            updates["slot"] = value
+        if "role" in data:
+            value = str(data["role"]).strip().lower()
+            if value not in {"admin", "player"}:
+                return error("invalid_request", "role must be admin or player.", 400)
+            updates["role"] = value
+        if "active" in data:
+            if not isinstance(data["active"], bool):
+                return error("invalid_request", "active must be a boolean.", 400)
+            updates["active"] = int(data["active"])
+        with transaction(immediate=True) as db:
+            current = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+            if not current:
+                return error("user_not_found", "User not found.", 404)
+            new_role = updates.get("role", current["role"])
+            new_active = updates.get("active", current["active"])
+            if current["role"] == "admin" and current["active"] == 1 and (
+                new_role != "admin" or new_active != 1
+            ):
+                others = db.execute(
+                    "SELECT COUNT(*) FROM users WHERE id<>? AND role='admin' AND active=1",
+                    (user_id,),
+                ).fetchone()[0]
+                if others == 0:
+                    return error(
+                        "last_admin",
+                        "The last active administrator cannot be disabled or demoted.",
+                        409,
+                    )
+            assignments = ",".join(f"{column}=?" for column in updates)
+            db.execute(
+                f"UPDATE users SET {assignments} WHERE id=?",
+                (*updates.values(), user_id),
+            )
+            audit(
+                db,
+                "user_updated",
+                g.save_sync_user,
+                True,
+                targetUserId=user_id,
+                changed=sorted(data),
+            )
+        return jsonify(ok=True)
+
+    @managed_routes("/admin/hosts", methods=["GET", "POST"])
+    @secured(admin=True)
+    def admin_hosts():
+        if not managed_hosts:
+            return error("not_found", "Managed computers are not enabled for this game.", 404)
+        if request.method == "GET":
+            with transaction() as db:
+                rows = db.execute(
+                    "SELECT h.*,u.username,u.display_name,u.role,u.active user_active,"
+                    "SUM(CASE WHEN t.revoked_at IS NULL THEN 1 ELSE 0 END) active_token_count,"
+                    "MAX(CASE WHEN l.singleton=1 THEN 1 ELSE 0 END) session_active "
+                    "FROM authorized_hosts h JOIN users u ON u.id=h.user_id "
+                    "LEFT JOIN api_tokens t ON t.host_id=h.id "
+                    "LEFT JOIN active_lock l ON l.host_id=h.id "
+                    "GROUP BY h.id ORDER BY u.username COLLATE NOCASE,h.name COLLATE NOCASE"
+                ).fetchall()
+            return jsonify(
+                hosts=[
+                    {
+                        "id": row["id"],
+                        "userId": row["user_id"],
+                        "username": row["username"],
+                        "displayName": display_username(
+                            row["username"], row["display_name"]
+                        ),
+                        "role": row["role"],
+                        "clientId": row["client_id"],
+                        "name": row["name"],
+                        "active": bool(row["active"]),
+                        "userActive": bool(row["user_active"]),
+                        "activeTokenCount": row["active_token_count"] or 0,
+                        "sessionActive": bool(row["session_active"]),
+                        "createdAt": row["created_at"],
+                        "lastSeenAt": row["last_seen_at"],
+                        "lastPublishedAt": row["last_published_at"],
+                    }
+                    for row in rows
+                ]
+            )
+        data = request.get_json(silent=True) or {}
+        try:
+            user_id = int(data.get("userId", 0))
+        except (TypeError, ValueError):
+            user_id = 0
+        client_id = str(data.get("clientId", "")).strip()
+        name = str(data.get("name", "")).strip()
+        if user_id < 1 or not client_id or len(client_id) > 200 or not name or len(name) > 100:
+            return error(
+                "invalid_request", "userId, clientId and computer name are required.", 400
+            )
+        with transaction(immediate=True) as db:
+            user = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+            if not user:
+                return error("user_not_found", "User not found.", 404)
+            if user["active"] != 1:
+                return error("user_disabled", "Enable the user before adding a computer.", 409)
+            try:
+                cursor = db.execute(
+                    "INSERT INTO authorized_hosts(user_id,client_id,name,active,created_at) VALUES(?,?,?,1,?)",
+                    (user_id, client_id, name, iso(utcnow())),
+                )
+            except sqlite3.IntegrityError:
+                return error(
+                    "host_exists", "That ClientId is already assigned to a computer.", 409
+                )
+            audit(
+                db,
+                "host_created",
+                g.save_sync_user,
+                True,
+                client_id,
+                hostId=cursor.lastrowid,
+                targetUserId=user_id,
+                name=name,
+            )
+        return jsonify(
+            id=cursor.lastrowid,
+            userId=user_id,
+            clientId=client_id,
+            name=name,
+            active=True,
+        ), 201
+
+    @managed_routes("/admin/hosts/<int:host_id>", methods=["PATCH"])
+    @secured(admin=True)
+    def update_host(host_id):
+        if not managed_hosts:
+            return error("not_found", "Managed computers are not enabled for this game.", 404)
+        data = request.get_json(silent=True) or {}
+        allowed = {"name", "active"}
+        if not data or any(key not in allowed for key in data):
+            return error("invalid_request", "No supported host fields were supplied.", 400)
+        updates = {}
+        if "name" in data:
+            value = str(data["name"]).strip()
+            if not value or len(value) > 100:
+                return error("invalid_request", "name must be 1-100 characters.", 400)
+            updates["name"] = value
+        if "active" in data:
+            if not isinstance(data["active"], bool):
+                return error("invalid_request", "active must be a boolean.", 400)
+            updates["active"] = int(data["active"])
+        with transaction(immediate=True) as db:
+            host = db.execute(
+                "SELECT h.*,u.active user_active FROM authorized_hosts h "
+                "JOIN users u ON u.id=h.user_id WHERE h.id=?",
+                (host_id,),
+            ).fetchone()
+            if not host:
+                return error("host_not_found", "Computer not found.", 404)
+            if updates.get("active") == 1 and host["user_active"] != 1:
+                return error("user_disabled", "Enable the user before this computer.", 409)
+            assignments = ",".join(f"{column}=?" for column in updates)
+            db.execute(
+                f"UPDATE authorized_hosts SET {assignments} WHERE id=?",
+                (*updates.values(), host_id),
+            )
+            audit(
+                db,
+                "host_updated",
+                g.save_sync_user,
+                True,
+                host["client_id"],
+                hostId=host_id,
+                changed=sorted(data),
+            )
+        return jsonify(ok=True)
+
     @routes("/admin/tokens", methods=["GET", "POST"])
     @secured(admin=True)
     def tokens():
         if request.method == "GET":
             with transaction() as db:
-                rows = db.execute(
-                    "SELECT t.id,t.name,t.created_at,t.last_used_at,t.revoked_at,u.username FROM api_tokens t JOIN users u ON u.id=t.user_id ORDER BY t.id"
-                ).fetchall()
+                if managed_hosts:
+                    rows = db.execute(
+                        "SELECT t.id,t.name,t.created_at,t.last_used_at,t.revoked_at,t.host_id,"
+                        "u.username,h.client_id,h.name host_name FROM api_tokens t "
+                        "JOIN users u ON u.id=t.user_id LEFT JOIN authorized_hosts h ON h.id=t.host_id "
+                        "ORDER BY t.id"
+                    ).fetchall()
+                else:
+                    rows = db.execute(
+                        "SELECT t.id,t.name,t.created_at,t.last_used_at,t.revoked_at,u.username "
+                        "FROM api_tokens t JOIN users u ON u.id=t.user_id ORDER BY t.id"
+                    ).fetchall()
             return jsonify(tokens=[dict(r) for r in rows])
         data = request.get_json(silent=True) or {}
         username = str(data.get("username", ""))
         name = str(data.get("name", "")).strip()
-        if not username or not name:
+        host_id = data.get("hostId")
+        if managed_hosts and host_id is None:
+            return error(
+                "invalid_request",
+                "hostId is required for games with managed computers.",
+                400,
+            )
+        if host_id is not None and not managed_hosts:
+            return error("invalid_request", "hostId is not supported for this game.", 400)
+        if host_id is not None:
+            try:
+                host_id = int(host_id)
+            except (TypeError, ValueError):
+                return error("invalid_request", "hostId must be an integer.", 400)
+        if not username or not name or (managed_hosts and len(name) > 100):
             return error("invalid_request", "username and name are required.", 400)
         token = "pws_" + secrets.token_urlsafe(36)
         with transaction(immediate=True) as db:
@@ -1789,9 +2415,22 @@ def create_app(config=None):
             ).fetchone()
             if not user:
                 return error("user_not_found", "User not found.", 404)
+            if host_id is not None:
+                host = db.execute(
+                    "SELECT * FROM authorized_hosts WHERE id=? AND user_id=?",
+                    (host_id, user["id"]),
+                ).fetchone()
+                if not host:
+                    return error(
+                        "host_not_found", "Computer not found for that user.", 404
+                    )
+                if host["active"] != 1:
+                    return error(
+                        "host_disabled", "Enable the computer before creating a token.", 409
+                    )
             cursor = db.execute(
-                "INSERT INTO api_tokens(user_id,name,token_hash,created_at) VALUES(?,?,?,?)",
-                (user["id"], name, digest(token), iso(utcnow())),
+                "INSERT INTO api_tokens(user_id,name,token_hash,created_at,host_id) VALUES(?,?,?,?,?)",
+                (user["id"], name, digest(token), iso(utcnow()), host_id),
             )
             audit(
                 db,
@@ -1800,10 +2439,17 @@ def create_app(config=None):
                 True,
                 tokenId=cursor.lastrowid,
                 username=username,
+                hostId=host_id,
             )
-        return jsonify(
-            id=cursor.lastrowid, token=token, username=username, name=name
-        ), 201
+        response = {
+            "id": cursor.lastrowid,
+            "token": token,
+            "username": username,
+            "name": name,
+        }
+        if managed_hosts:
+            response["hostId"] = host_id
+        return jsonify(response), 201
 
     @routes("/admin/tokens/<int:token_id>", methods=["DELETE"])
     @secured(admin=True)
@@ -1857,13 +2503,15 @@ def create_app(config=None):
                 content_type="text/plain; charset=utf-8",
             )
         csrf = csrf_value(user["username"]) or ""
+        panel_template = MANAGED_PANEL_HTML if managed_hosts else PANEL_HTML
         panel_html = (
-            PANEL_HTML.replace("__USER__", html.escape(user["username"], quote=True))
+            panel_template.replace("__USER__", html.escape(user["username"], quote=True))
             .replace("__ROLE__", user["role"])
             .replace("__CSRF__", csrf)
             .replace("__GAME__", html.escape(display_game, quote=True))
             .replace("__IDENTITY_LABEL__", html.escape(identity_label, quote=True))
             .replace("__WEB_API_PREFIX__", f"/games/{game_key}/api")
+            .replace("__MANAGED_HOSTS__", "true" if managed_hosts else "false")
         )
         return Response(
             panel_html,
@@ -1883,6 +2531,90 @@ def create_app(config=None):
     return app
 
 
+MANAGED_PANEL_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>__GAME__ · Save Sync</title><style>
+:root{color-scheme:dark;font-family:system-ui;background:#10141b;color:#eef2f8}*{box-sizing:border-box}body{max-width:1180px;margin:2rem auto;padding:0 1rem}header,.card{background:#19212d;border:1px solid #344154;border-radius:14px;padding:1.2rem;margin:1rem 0}.grid,.forms{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.8rem}.label,.hint{color:#9eabc0;font-size:.85rem}.value{font-size:1.05rem;overflow-wrap:anywhere}button,a.button{background:#5b7cfa;color:white;border:0;border-radius:8px;padding:.62rem .85rem;text-decoration:none;cursor:pointer}button.secondary{background:#344154}button.danger{background:#9d3f4a}button:disabled{opacity:.5;cursor:not-allowed}input,select{width:100%;background:#101722;color:#eef2f8;border:1px solid #44536a;border-radius:8px;padding:.65rem}fieldset{border:1px solid #344154;border-radius:10px;padding:.8rem}legend{color:#c8d4e8;padding:0 .35rem}.busy,.backup-pending,.backup-warning{color:#ffbf69}.free,.backup-completed,.enabled{color:#72dfa1}.backup-failed,.backup-unknown,.disabled{color:#ff7b86}.backup-disabled,.backup-not_initialized{color:#9eabc0}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.55rem;border-bottom:1px solid #344154;vertical-align:top}code{font-size:.78rem}.actions{display:flex;gap:.35rem;flex-wrap:wrap}.actions button{padding:.38rem .55rem}.badge{display:inline-block;border:1px solid #44536a;border-radius:99px;padding:.12rem .45rem;font-size:.78rem}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#101722;border:1px solid #344154;border-radius:8px;padding:.7rem}.section-head{display:flex;justify-content:space-between;align-items:center;gap:.7rem;flex-wrap:wrap}h3{margin-top:1.5rem}
+</style></head><body>
+<header><h1>__GAME__ synchronization</h1><div>User: __USER__ · Role: __ROLE__</div></header>
+<section class="card"><h2 id="state">Loading…</h2><div class="grid" id="facts"></div><p id="lock"></p><a class="button" href="__WEB_API_PREFIX__/download">Download latest version</a> <button id="force" hidden>Force unlock</button></section>
+<section class="card"><h2>External backup</h2><div class="grid" id="backupFacts"></div><p id="backupConfig">Loading…</p><p id="backupState">Loading…</p></section>
+<section class="card"><h2>History</h2><div class="table-wrap"><table><thead><tr><th>Version</th><th>__IDENTITY_LABEL__</th><th>User</th><th class="managed-only" hidden>Computer</th><th>Date</th><th>Size</th><th>SHA-256</th><th>Actions</th></tr></thead><tbody id="history"></tbody></table></div></section>
+<section class="card" id="tokensCard" hidden><h2>Tokens API</h2><p>The new token is shown only once.</p><input id="tokenUser" placeholder="Authorized user"><input id="legacyTokenName" placeholder="Computer name"><button id="createLegacyToken">Create token</button><pre id="legacyNewToken"></pre><div id="legacyTokens"></div></section>
+<section class="card" id="accessCard" hidden>
+ <div class="section-head"><div><h2>Access & computers</h2><p class="hint">Authentik proves identity; Save Sync controls who may use this game and which computers may host it. Creating a user here authorizes an existing Authentik username; it does not create an Authentik account.</p></div></div>
+ <div class="forms">
+  <fieldset><legend>Add user</legend><input id="newUsername" placeholder="Authentik username"><input id="newDisplayName" placeholder="Display name"><input id="newSlot" placeholder="Retention slot"><select id="newRole"><option value="player">Player</option><option value="admin">Admin</option></select><button id="createUser">Add user</button></fieldset>
+  <fieldset><legend>Add computer</legend><select id="hostUser"></select><input id="hostClientId" placeholder="ClientId, e.g. alex-pc"><input id="hostName" placeholder="Computer name"><button id="createHost">Add computer</button></fieldset>
+  <fieldset><legend>Create computer token</legend><select id="tokenHost"></select><input id="hostTokenName" placeholder="Token label"><button id="createToken">Create token</button><p class="hint">Computer tokens can synchronize saves but cannot perform admin operations, even when their owner is an admin.</p></fieldset>
+ </div>
+ <pre id="newToken" hidden></pre>
+ <h3>Users</h3><div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Computers</th><th>Last seen</th><th>Actions</th></tr></thead><tbody id="users"></tbody></table></div>
+ <h3>Computers</h3><div class="table-wrap"><table><thead><tr><th>Owner</th><th>Computer</th><th>ClientId</th><th>Status</th><th>Tokens</th><th>Last seen</th><th>Last publish</th><th>Actions</th></tr></thead><tbody id="hosts"></tbody></table></div>
+ <h3>API tokens</h3><p class="hint">Legacy unbound tokens remain visible for migration/administration. New sync tokens must be bound to a registered computer.</p><div id="tokens"></div>
+ <h3>Recent audit</h3><div class="table-wrap"><table><thead><tr><th>When</th><th>User</th><th>Computer</th><th>Event</th><th>Result</th></tr></thead><tbody id="audit"></tbody></table></div>
+</section>
+<script>
+const csrf='__CSRF__',role='__ROLE__',managedHosts=__MANAGED_HOSTS__;
+const headers={'X-CSRF-Token':csrf,'Content-Type':'application/json'};
+const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const safeInt=value=>Number.isSafeInteger(Number(value))?Number(value):0;
+const fmt=value=>value||'—';
+let accessState={users:[],hosts:[],tokens:[],audit:[]};
+async function mutate(url,method='POST',body={}){const r=await fetch(url,{method,headers,body:method==='DELETE'?undefined:JSON.stringify(body)});const j=await r.json();if(!r.ok)alert(j.message||'Error');return [r,j]}
+async function load(){
+ const backup=fetch('__WEB_API_PREFIX__/backup-status').then(async r=>r.ok?await r.json():null).catch(()=>null);
+ const [s,h,b]=await Promise.all([fetch('__WEB_API_PREFIX__/status').then(r=>r.json()),fetch('__WEB_API_PREFIX__/history').then(r=>r.json()),backup]);
+ document.querySelector('#state').textContent=s.locked?'Status: in use':'Status: available';document.querySelector('#state').className=s.locked?'busy':'free';
+ const factRows=[['Version',s.version],['__IDENTITY_LABEL__',s.saveIdentity||'—'],['Last update',s.updatedAt||'Not initialized'],['Last player',s.updatedBy||'—'],...(managedHosts?[['Last computer',s.updatedHostName||s.updatedClientId||'—']]:[]),['Size',s.size+' bytes'],['SHA-256',s.sha256||'—']];
+ document.querySelector('#facts').innerHTML=factRows.map(x=>`<div><div class=label>${esc(x[0])}</div><div class=value>${esc(x[1])}</div></div>`).join('');
+ document.querySelector('#lock').textContent=s.locked?(managedHosts?`Server in use by ${s.lock.owner}${s.lock.hostName?` on ${s.lock.hostName}`:''} (${s.lock.clientId||'legacy client'}). Last heartbeat: ${s.lock.lastHeartbeatAt}. Expires: ${s.lock.expiresAt}.`:`Server in use by ${s.lock.owner}. Last heartbeat: ${s.lock.lastHeartbeatAt}. Expires: ${s.lock.expiresAt}.`):'';
+ if(b){
+  const labels={completed:'Completed',pending:'Pending',failed:'Failed',unknown:'No result',disabled:'Disabled',not_initialized:'No save'};
+  const stateLabel=b.stalePending&&b.state==='unknown'?'No result (stale marker)':labels[b.state]||b.state;
+  document.querySelector('#backupConfig').textContent=`Automatic backup: ${b.enabled?'enabled':'disabled ⚠'}`;document.querySelector('#backupConfig').className=b.enabled?'backup-completed':'backup-warning';
+  document.querySelector('#backupState').textContent=`Current version backup state: ${stateLabel}`;document.querySelector('#backupState').className=`backup-${b.state}`;
+  const pendingVersions=Array.isArray(b.pendingVersions)?b.pendingVersions:[];
+  const staleVersions=Array.isArray(b.stalePendingVersions)?b.stalePendingVersions:[];
+  document.querySelector('#backupFacts').innerHTML=[['Latest published version',b.latestPublishedVersion||'—'],['Latest backed-up version',b.lastCompleted?.version||'—'],['Latest completed backup',b.lastCompleted?.completedAt||'—'],['Latest exitCode',b.lastAttempt?.exitCode??'—'],['Pending',pendingVersions.map(x=>x.version).join(', ')||'None'],['Stale markers',staleVersions.map(x=>x.version).join(', ')||'None'],['Current version backed up',b.latestVersionBackedUp?'Yes':'No']].map(x=>`<div><div class=label>${esc(x[0])}</div><div class=value>${esc(x[1])}</div></div>`).join('');
+ }else{
+  document.querySelector('#backupConfig').textContent='Automatic backup: unavailable';document.querySelector('#backupConfig').className='backup-unknown';
+  document.querySelector('#backupState').textContent='Current version backup state: unavailable';document.querySelector('#backupState').className='backup-unknown';document.querySelector('#backupFacts').innerHTML='';
+ }
+ document.querySelector('#history').innerHTML=h.versions.map(v=>{const id=safeInt(v.version);return `<tr><td>${id}</td><td><code>${esc(v.saveIdentity)}</code></td><td>${esc(v.updatedBy)}</td>${managedHosts?`<td class=managed-only>${esc(v.hostName||v.clientId||'—')}</td>`:''}<td>${esc(v.updatedAt)}</td><td>${esc(v.size)}</td><td><code>${esc(v.sha256)}</code></td><td>${role==='admin'?`<div class=actions><a href=__WEB_API_PREFIX__/history/${id}/download>Download</a><button onclick=restoreV(${id})>Restore</button></div>`:''}</td></tr>`}).join('');
+ document.querySelectorAll('.managed-only').forEach(el=>el.hidden=!managedHosts);
+ document.querySelector('#force').hidden=role!=='admin'||!s.locked;if(role==='admin'){if(managedHosts)await loadAccess();else await loadTokens()}
+}
+async function restoreV(v){if(confirm(`Restore v${v} as a new version?`)){await mutate(`__WEB_API_PREFIX__/history/${v}/restore`);load()}}
+document.querySelector('#force').onclick=async()=>{const reason=prompt('Reason for force unlock:');if(reason){await mutate('__WEB_API_PREFIX__/admin/force-unlock','POST',{reason});load()}};
+async function loadAccess(){
+ document.querySelector('#accessCard').hidden=false;
+ const [u,h,t,a]=await Promise.all([fetch('__WEB_API_PREFIX__/admin/users').then(r=>r.json()),fetch('__WEB_API_PREFIX__/admin/hosts').then(r=>r.json()),fetch('__WEB_API_PREFIX__/admin/tokens').then(r=>r.json()),fetch('__WEB_API_PREFIX__/admin/audit?limit=50').then(r=>r.json())]);
+ accessState={users:u.users||[],hosts:h.hosts||[],tokens:t.tokens||[],audit:a.events||[]};
+ document.querySelector('#users').innerHTML=accessState.users.map(u=>{const id=safeInt(u.id);return `<tr><td><strong>${esc(u.displayName)}</strong><br><span class=hint>${esc(u.username)} · slot ${esc(u.slot)}</span></td><td><span class=badge>${esc(u.role)}</span></td><td class=${u.active?'enabled':'disabled'}>${u.active?'Enabled':'Disabled'}</td><td>${esc(`${u.activeHostCount}/${u.hostCount}`)}</td><td>${esc(fmt(u.lastSeenAt))}</td><td><div class=actions><button class=secondary onclick=editUser(${id})>Edit</button><button class=secondary onclick=toggleUserRole(${id},'${u.role}')>${u.role==='admin'?'Make player':'Make admin'}</button><button class=${u.active?'danger':'secondary'} onclick=toggleUser(${id},${u.active})>${u.active?'Disable':'Enable'}</button></div></td></tr>`}).join('');
+ document.querySelector('#hosts').innerHTML=accessState.hosts.map(h=>{const id=safeInt(h.id);const active=h.active&&h.userActive;return `<tr><td>${esc(h.displayName)}<br><span class=hint>${esc(h.username)}</span></td><td>${esc(h.name)}${h.sessionActive?' <span class="badge busy">IN USE</span>':''}</td><td><code>${esc(h.clientId)}</code></td><td class=${active?'enabled':'disabled'}>${active?'Enabled':h.userActive?'Disabled':'User disabled'}</td><td>${esc(h.activeTokenCount)}</td><td>${esc(fmt(h.lastSeenAt))}</td><td>${esc(fmt(h.lastPublishedAt))}</td><td><div class=actions><button class=secondary onclick=editHost(${id})>Rename</button><button class=${h.active?'danger':'secondary'} onclick=toggleHost(${id},${h.active})>${h.active?'Disable':'Enable'}</button></div></td></tr>`}).join('');
+ document.querySelector('#tokens').innerHTML=accessState.tokens.map(t=>{const id=safeInt(t.id);const binding=t.host_id?`${esc(t.host_name)} · <code>${esc(t.client_id)}</code>`:'<span class="hint">Legacy / unbound</span>';return `<p>#${id} ${esc(t.username)} · ${esc(t.name)} · ${binding} · ${t.revoked_at?'revoked':`<button onclick=revokeT(${id})>Revoke</button>`}</p>`}).join('')||'<p class=hint>No API tokens.</p>';
+ document.querySelector('#audit').innerHTML=accessState.audit.map(a=>`<tr><td>${esc(a.at)}</td><td>${esc(a.username||'system')}</td><td>${esc(a.client_id||'—')}</td><td>${esc(a.event)}</td><td class=${a.success?'enabled':'disabled'}>${a.success?'OK':'Failed'}</td></tr>`).join('')||'<tr><td colspan=5 class=hint>No audit events.</td></tr>';
+ const activeUsers=accessState.users.filter(u=>u.active);document.querySelector('#hostUser').innerHTML=activeUsers.map(u=>`<option value=${safeInt(u.id)}>${esc(u.displayName)} (${esc(u.username)})</option>`).join('');
+ const tokenHosts=accessState.hosts.filter(h=>h.active&&h.userActive);document.querySelector('#tokenHost').innerHTML=tokenHosts.map(h=>`<option value=${safeInt(h.id)}>${esc(h.displayName)} · ${esc(h.name)} · ${esc(h.clientId)}</option>`).join('');
+}
+document.querySelector('#createUser').onclick=async()=>{const body={username:newUsername.value.trim(),displayName:newDisplayName.value.trim(),slot:newSlot.value.trim(),role:newRole.value};const [r]=await mutate('__WEB_API_PREFIX__/admin/users','POST',body);if(r.ok){newUsername.value='';newDisplayName.value='';newSlot.value='';await loadAccess()}};
+document.querySelector('#createHost').onclick=async()=>{const body={userId:safeInt(hostUser.value),clientId:hostClientId.value.trim(),name:hostName.value.trim()};const [r]=await mutate('__WEB_API_PREFIX__/admin/hosts','POST',body);if(r.ok){hostClientId.value='';hostName.value='';await loadAccess()}};
+document.querySelector('#createToken').onclick=async()=>{const host=accessState.hosts.find(h=>safeInt(h.id)===safeInt(tokenHost.value));if(!host){alert('Select an enabled computer first.');return}const [r,j]=await mutate('__WEB_API_PREFIX__/admin/tokens','POST',{username:host.username,hostId:host.id,name:hostTokenName.value.trim()});if(r.ok){newToken.hidden=false;newToken.textContent=`Copy this token now; it will not be shown again:\n${j.token}`;hostTokenName.value='';await loadAccess()}};
+async function editUser(id){const u=accessState.users.find(x=>safeInt(x.id)===safeInt(id));if(!u)return;const displayName=prompt('Display name:',u.displayName);if(displayName===null)return;const slot=prompt('Retention slot:',u.slot);if(slot===null)return;const [r]=await mutate(`__WEB_API_PREFIX__/admin/users/${safeInt(id)}`,'PATCH',{displayName,slot});if(r.ok)loadAccess()}
+async function toggleUserRole(id,current){if(current==='admin'&&!confirm('Change this administrator to player?'))return;const [r]=await mutate(`__WEB_API_PREFIX__/admin/users/${safeInt(id)}`,'PATCH',{role:current==='admin'?'player':'admin'});if(r.ok)loadAccess()}
+async function toggleUser(id,current){if(current&&!confirm('Disable this user? Their API access will stop; an active lock is deliberately kept until expiry unless you force-unlock it.'))return;const [r]=await mutate(`__WEB_API_PREFIX__/admin/users/${safeInt(id)}`,'PATCH',{active:!current});if(r.ok)loadAccess()}
+async function editHost(id){const h=accessState.hosts.find(x=>safeInt(x.id)===safeInt(id));if(!h)return;const name=prompt('Computer name:',h.name);if(name===null)return;const [r]=await mutate(`__WEB_API_PREFIX__/admin/hosts/${safeInt(id)}`,'PATCH',{name});if(r.ok)loadAccess()}
+async function toggleHost(id,current){if(current&&!confirm('Disable this computer? Its token will stop working. An active lock is deliberately kept until expiry unless you force-unlock it.'))return;const [r]=await mutate(`__WEB_API_PREFIX__/admin/hosts/${safeInt(id)}`,'PATCH',{active:!current});if(r.ok)loadAccess()}
+async function revokeT(id){if(!confirm('Revoke this token?'))return;const [r]=await mutate(`__WEB_API_PREFIX__/admin/tokens/${safeInt(id)}`,'DELETE');if(r.ok)loadAccess()}
+async function loadTokens(){document.querySelector('#tokensCard').hidden=false;const j=await fetch('__WEB_API_PREFIX__/admin/tokens').then(r=>r.json());document.querySelector('#legacyTokens').innerHTML=j.tokens.map(t=>{const id=safeInt(t.id);return `<p>#${id} ${esc(t.username)} · ${esc(t.name)} · ${t.revoked_at?'revoked':`<button onclick=revokeLegacyT(${id})>Revoke</button>`}</p>`}).join('')}
+async function revokeLegacyT(id){const [r]=await mutate(`__WEB_API_PREFIX__/admin/tokens/${safeInt(id)}`,'DELETE');if(r.ok)loadTokens()}
+document.querySelector('#createLegacyToken').onclick=async()=>{const [r,j]=await mutate('__WEB_API_PREFIX__/admin/tokens','POST',{username:tokenUser.value,name:legacyTokenName.value});if(r.ok){legacyNewToken.textContent=j.token;loadTokens()}};
+load();setInterval(load,30000)
+</script></body></html>"""
+
+
+# Keep the unmanaged panel byte-for-byte equivalent in structure and behavior to
+# the pre-managed-host UI. Palworld deliberately uses this template so enabling
+# managed computers for experimental games does not change its stable panel.
 PANEL_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>__GAME__ · Save Sync</title><style>
 :root{color-scheme:dark;font-family:system-ui;background:#10141b;color:#eef2f8}body{max-width:980px;margin:3rem auto;padding:0 1rem}header,.card{background:#19212d;border:1px solid #344154;border-radius:14px;padding:1.2rem;margin:1rem 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.8rem}.label{color:#9eabc0;font-size:.85rem}.value{font-size:1.1rem;overflow-wrap:anywhere}button,a.button{background:#5b7cfa;color:white;border:0;border-radius:8px;padding:.7rem 1rem;text-decoration:none;cursor:pointer}.busy,.backup-pending,.backup-warning{color:#ffbf69}.free,.backup-completed{color:#72dfa1}.backup-failed,.backup-unknown{color:#ff7b86}.backup-disabled,.backup-not_initialized{color:#9eabc0}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.55rem;border-bottom:1px solid #344154}code{font-size:.78rem}</style></head><body>
 <header><h1>__GAME__ synchronization</h1><div>User: __USER__ · Role: __ROLE__</div></header><section class="card"><h2 id="state">Loading…</h2><div class="grid" id="facts"></div><p id="lock"></p><a class="button" href="__WEB_API_PREFIX__/download">Download latest version</a> <button id="force" hidden>Force unlock</button></section><section class="card"><h2>External backup</h2><div class="grid" id="backupFacts"></div><p id="backupConfig">Loading…</p><p id="backupState">Loading…</p></section><section class="card"><h2>History</h2><table><thead><tr><th>Version</th><th>__IDENTITY_LABEL__</th><th>User</th><th>Date</th><th>Size</th><th>SHA-256</th><th>Actions</th></tr></thead><tbody id="history"></tbody></table></section><section class="card" id="tokensCard" hidden><h2>Tokens API</h2><p>The new token is shown only once.</p><input id="tokenUser" placeholder="Authorized user"><input id="tokenName" placeholder="Computer name"><button id="createToken">Create token</button><pre id="newToken"></pre><div id="tokens"></div></section>

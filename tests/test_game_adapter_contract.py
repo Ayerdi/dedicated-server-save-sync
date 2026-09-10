@@ -159,6 +159,7 @@ def test_valheim_game_config_uses_generic_world_uid_identity():
         "identityNormalization": "none",
         "identityKind": "int64",
         "legacyPalworldRoutes": False,
+        "managedHosts": True,
     }
 
 
@@ -184,10 +185,15 @@ def test_valheim_backend_rejects_world_uid_outside_int64(tmp_path):
         user_id = db.execute(
             "SELECT id FROM users WHERE username='operator'"
         ).fetchone()[0]
+        host_id = db.execute(
+            "INSERT INTO authorized_hosts(user_id,client_id,name,active,created_at) "
+            "VALUES(?,?,?,1,datetime('now'))",
+            (user_id, "example-pc", "Example PC"),
+        ).lastrowid
         db.execute(
-            "INSERT INTO api_tokens(user_id,name,token_hash,created_at) "
-            "VALUES(?,?,?,datetime('now'))",
-            (user_id, "test", hashlib.sha256(token.encode()).hexdigest()),
+            "INSERT INTO api_tokens(user_id,name,token_hash,created_at,host_id) "
+            "VALUES(?,?,?,datetime('now'),?)",
+            (user_id, "test", hashlib.sha256(token.encode()).hexdigest(), host_id),
         )
 
     client = app.test_client()

@@ -141,6 +141,8 @@ The backend retains generic primitives (`gameKey`, `saveIdentity`, adapters), an
 
 An experimental Valheim adapter is developed behind the same isolation boundary: it requires its own `gameKey`, database and storage root and does not change Palworld's legacy API/REST behavior.
 
+The development backend also includes schema-4 web management for authorized users and physical host PCs behind the per-game `managedHosts` capability. It is enabled for the experimental Valheim deployment and disabled for Palworld. Authentik remains the identity provider; Save Sync stores roles, registered `ClientId` values and optional computer-bound sync tokens. This supports groups where several distinct computers may take turns hosting one authoritative save while the global lock prevents simultaneous writers.
+
 A broader product covering multi-game installations, automatic save discovery, multiple server instances, device-to-device cloud save synchronization and a cross-platform agent is intentionally outside this repository's maintenance scope.
 
 ## Development
