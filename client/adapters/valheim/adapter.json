@@ -1,0 +1,8 @@
+{
+  "key": "valheim",
+  "gameKey": "valheim",
+  "displayName": "Valheim",
+  "clientVersion": "0.1.0",
+  "entrypoint": "Adapter.ps1",
+  "backendConfig": "config/games/valheim.json"
+}

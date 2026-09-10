@@ -130,6 +130,7 @@ DEFAULT_GAME = {
     "identityLabel": "World GUID",
     "identityPattern": r"^[A-F0-9]{32}$",
     "identityNormalization": "uppercase",
+    "identityKind": "string",
     "legacyPalworldRoutes": True,
 }
 
@@ -168,6 +169,7 @@ def create_app(config=None):
     identity_field = str(game.get("identityField", "")).strip()
     identity_label = str(game.get("identityLabel", "")).strip()
     normalization = str(game.get("identityNormalization", "none")).strip().lower()
+    identity_kind = str(game.get("identityKind", "string")).strip().lower()
     if not GAME_KEY_RE.fullmatch(game_key):
         raise RuntimeError("game.key must use lowercase letters, numbers and hyphens")
     if expected_game_key != game_key:
@@ -176,6 +178,8 @@ def create_app(config=None):
         raise RuntimeError("displayName or identityField are invalid")
     if not identity_label or normalization not in {"none", "uppercase", "lowercase"}:
         raise RuntimeError("identityLabel or identityNormalization are invalid")
+    if identity_kind not in {"string", "int64"}:
+        raise RuntimeError("identityKind must be string or int64")
     try:
         identity_re = re.compile(str(game.get("identityPattern", "")))
     except re.error as exc:
@@ -190,6 +194,13 @@ def create_app(config=None):
             raw = raw.upper()
         elif normalization == "lowercase":
             raw = raw.lower()
+        if identity_kind == "int64":
+            try:
+                parsed = int(raw)
+            except ValueError:
+                return None
+            if not -(2**63) <= parsed <= (2**63) - 1 or raw != str(parsed):
+                return None
         if not raw or len(raw) > 256 or not identity_re.fullmatch(raw):
             return None
         return raw

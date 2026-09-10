@@ -1,0 +1,22 @@
+{
+  "Adapter": "valheim",
+  "GameKey": "valheim",
+  "PlayerName": "Host A",
+  "ClientId": "host-a-pc",
+  "ApiBaseUrl": "https://sync.example.com/api/games/valheim",
+  "ServerRoot": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Valheim dedicated server",
+  "ServerExecutable": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Valheim dedicated server\\valheim_server.exe",
+  "SaveRoot": "C:\\Users\\YOUR_USER\\AppData\\LocalLow\\IronGate\\Valheim",
+  "WorldName": "Dedicated",
+  "ServerName": "My Valheim Server",
+  "ServerPort": 2456,
+  "Public": false,
+  "Crossplay": false,
+  "ServerArguments": [],
+  "HeartbeatSeconds": 60,
+  "StartupTimeoutSeconds": 180,
+  "StartupReadyPattern": "Game server connected",
+  "ShutdownTimeoutSeconds": 180,
+  "PostExitGraceSeconds": 2,
+  "LocalBackupRetention": 5
+}

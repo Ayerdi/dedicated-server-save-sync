@@ -9,6 +9,8 @@
 
 > **Status:** `v2.2.2` is the stable Palworld reference release. This repository is in maintenance mode: bug fixes, security updates, dependency maintenance, documentation and Palworld compatibility. The broader multi-game / device-sync product will be developed separately.
 
+> **Development note:** the current development tree contains an experimental Valheim 1.0 Windows adapter. It reuses the generic backend contract but is not part of the `v2.2.2` stable release and should not be used on the only copy of a real world before its two-host acceptance test passes.
+
 [Website](https://ayerdi.github.io/dedicated-server-save-sync/) · [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki) · [Docs](docs/INDEX.md) · [Releases](https://github.com/Ayerdi/dedicated-server-save-sync/releases) · [Discussions](https://github.com/Ayerdi/dedicated-server-save-sync/discussions)
 
 > **Spanish documentation:** the repository itself is maintained in English. The [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki) keeps a complete Spanish section alongside the English pages.
@@ -136,6 +138,8 @@ Use [SECURITY.md](SECURITY.md) for vulnerabilities. Use [GitHub Discussions](htt
 ## Project scope
 
 The backend retains generic primitives (`gameKey`, `saveIdentity`, adapters), and the repository keeps technical documentation for that design. However, **the stable product in this repository supports Palworld**.
+
+An experimental Valheim adapter is developed behind the same isolation boundary: it requires its own `gameKey`, database and storage root and does not change Palworld's legacy API/REST behavior.
 
 A broader product covering multi-game installations, automatic save discovery, multiple server instances, device-to-device cloud save synchronization and a cross-platform agent is intentionally outside this repository's maintenance scope.
 

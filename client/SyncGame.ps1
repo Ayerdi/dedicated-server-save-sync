@@ -1,7 +1,8 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [switch]$SetupSecrets,
-    [switch]$TestOnly
+    [switch]$TestOnly,
+    [string]$ExpectedAdapter
 )
 
 Set-StrictMode -Version 2.0
@@ -17,6 +18,9 @@ $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 $adapter = [string]$config.Adapter
 if ($adapter -notmatch '^[a-z0-9][a-z0-9-]{0,62}$') {
     throw 'Adapter must use lowercase letters, numbers and hyphens.'
+}
+if (-not [string]::IsNullOrWhiteSpace($ExpectedAdapter) -and $adapter -ne $ExpectedAdapter) {
+    throw "This launcher expects adapter '$ExpectedAdapter', but config.json selects '$adapter'."
 }
 
 $adapterScript = Join-Path $ClientRoot ("adapters\{0}\Adapter.ps1" -f $adapter)

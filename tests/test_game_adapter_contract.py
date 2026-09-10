@@ -3,10 +3,13 @@ import io
 import json
 import sqlite3
 import zipfile
+from pathlib import Path
 
 import pytest
 
 from save_sync import create_app
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def zip_bytes(marker):
@@ -142,6 +145,87 @@ def test_game_key_must_match_adapter_file(tmp_path):
                 "SAVE_SYNC_GAME_CONFIG_PATH": str(game_path),
             }
         )
+
+
+def test_valheim_game_config_uses_generic_world_uid_identity():
+    config = json.loads((ROOT / "config/games/valheim.json").read_text(encoding="utf-8"))
+
+    assert config == {
+        "key": "valheim",
+        "displayName": "Valheim",
+        "identityField": "worldUid",
+        "identityLabel": "World UID",
+        "identityPattern": "^(0|-?[1-9][0-9]{0,18})$",
+        "identityNormalization": "none",
+        "identityKind": "int64",
+        "legacyPalworldRoutes": False,
+    }
+
+
+def test_valheim_backend_rejects_world_uid_outside_int64(tmp_path):
+    storage = tmp_path / "valheim-storage"
+    app = create_app(
+        {
+            "TESTING": True,
+            "SAVE_SYNC_GAME_KEY": "valheim",
+            "SAVE_SYNC_GAME_CONFIG_PATH": str(ROOT / "config/games/valheim.json"),
+            "SAVE_SYNC_STORAGE_PATH": str(storage),
+            "SAVE_SYNC_DB_PATH": str(storage / "save-sync.sqlite3"),
+            "SAVE_SYNC_REQUIRE_HTTPS": False,
+            "SAVE_SYNC_WEB_USERS": "operator:admin",
+            "SAVE_SYNC_USER_IDENTITIES_JSON": (
+                '{"operator":{"displayName":"Example Host","slot":"host-one"}}'
+            ),
+            "SAVE_SYNC_RATE_LIMIT_PER_MINUTE": 10000,
+        }
+    )
+    token = "pws_valheim_int64_test"
+    with app.extensions["save_sync_connect"]() as db:
+        user_id = db.execute(
+            "SELECT id FROM users WHERE username='operator'"
+        ).fetchone()[0]
+        db.execute(
+            "INSERT INTO api_tokens(user_id,name,token_hash,created_at) "
+            "VALUES(?,?,?,datetime('now'))",
+            (user_id, "test", hashlib.sha256(token.encode()).hexdigest()),
+        )
+
+    client = app.test_client()
+    headers = {"Authorization": f"Bearer {token}"}
+    lock = client.post(
+        "/api/games/valheim/lock",
+        headers=headers,
+        json={"owner": "Example Host", "clientId": "example-pc"},
+    ).get_json()
+    payload = zip_bytes(b"valheim")
+
+    invalid = client.post(
+        "/api/games/valheim/upload",
+        headers=headers,
+        data={
+            "file": (io.BytesIO(payload), "save.zip"),
+            "sessionId": lock["sessionId"],
+            "baseVersion": "0",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "worldUid": "9999999999999999999",
+        },
+    )
+    assert invalid.status_code == 400
+    assert invalid.get_json()["error"] == "invalid_save_identity"
+
+    accepted = client.post(
+        "/api/games/valheim/upload",
+        headers=headers,
+        data={
+            "file": (io.BytesIO(payload), "save.zip"),
+            "sessionId": lock["sessionId"],
+            "baseVersion": "0",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "worldUid": "9223372036854775807",
+        },
+    )
+    assert accepted.status_code == 201
+    assert accepted.get_json()["worldUid"] == "9223372036854775807"
 
 
 def test_palworld_v1_database_requires_separate_v2_storage(tmp_path):
