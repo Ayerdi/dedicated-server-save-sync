@@ -16,6 +16,8 @@ The repository is public. These controls must remain true after maintenance chan
 - [x] GitHub Pages source under `site/`.
 - [x] Issues, Discussions, Wiki and private vulnerability reporting enabled.
 - [x] Protected `main` with required CI checks.
+- [x] Stable Palworld release messaging remains distinct from experimental Valheim development-tree messaging.
+- [x] Pages and versioned Wiki include the experimental Valheim/managed-host guidance without presenting it as a `v2.2.2` release feature.
 
 ## Release preflight
 
@@ -31,7 +33,7 @@ Confirm the exact final SHA is green before publishing.
 
 ## Wiki
 
-The authoritative Wiki source lives under `wiki/`. English is the canonical landing flow; Spanish remains a complete localized flow beginning at `Inicio`.
+The authoritative Wiki source lives under `wiki/`. English is the canonical landing flow; Spanish remains a complete localized flow beginning at `Inicio`. Development-tree features such as experimental Valheim must be updated in both languages before `scripts/publish-wiki.sh --apply` is run.
 
 ## Verify after maintenance
 

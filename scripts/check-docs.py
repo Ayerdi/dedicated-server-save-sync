@@ -23,6 +23,7 @@ CURRENT_SURFACES = (
     "CONTRIBUTING.md",
     "docs/AGENT-HANDOFF.md",
     "docs/ADAPTING-OTHER-GAMES.md",
+    "docs/VALHEIM.md",
     "site/index.html",
     "wiki/Home.md",
     "wiki/Inicio.md",
@@ -32,6 +33,12 @@ CURRENT_SURFACES = (
     "wiki/Windows-Client.md",
     "wiki/FAQ.md",
     "wiki/FAQ-Espanol.md",
+    "wiki/Valheim-Experimental.md",
+    "wiki/Valheim-Experimental-Espanol.md",
+    "wiki/Managed-Computers.md",
+    "wiki/Equipos-Gestionados.md",
+    "wiki/Architecture.md",
+    "wiki/Arquitectura.md",
 )
 
 

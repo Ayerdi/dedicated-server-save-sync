@@ -21,6 +21,8 @@ body:
         - Backend/API
         - PowerShell client
         - Palworld adapter
+        - Valheim adapter (experimental)
+        - Managed users/computers
         - Docker/Traefik
         - Backup supervisor
         - Documentation

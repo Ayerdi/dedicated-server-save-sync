@@ -1,1 +1,1 @@
-Dedicated Server Save Sync · Apache-2.0 · [Repository](https://github.com/Ayerdi/dedicated-server-save-sync) · [Security](https://github.com/Ayerdi/dedicated-server-save-sync/security/policy) · [[Home|English]] · [[Inicio|Español]]
+Dedicated Server Save Sync · stable v2.2.2 Palworld · experimental Valheim on `main` · Apache-2.0 · [Repository](https://github.com/Ayerdi/dedicated-server-save-sync) · [Security](https://github.com/Ayerdi/dedicated-server-save-sync/security/policy) · [[Home|English]] · [[Inicio|Español]]

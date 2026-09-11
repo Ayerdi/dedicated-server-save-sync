@@ -5,9 +5,9 @@
 [![License](https://img.shields.io/github/license/Ayerdi/dedicated-server-save-sync)](LICENSE)
 [![Pages](https://github.com/Ayerdi/dedicated-server-save-sync/actions/workflows/pages.yml/badge.svg)](https://github.com/Ayerdi/dedicated-server-save-sync/actions/workflows/pages.yml)
 
-**Concurrency-safe save synchronization for alternating Palworld dedicated-server hosts without keeping one gaming PC online 24/7.**
+**Concurrency-safe save synchronization for alternating dedicated-server hosts, with a stable Palworld release and an experimental Valheim adapter on `main`.**
 
-> **Status:** `v2.2.2` is the stable Palworld reference release. This repository is in maintenance mode: bug fixes, security updates, dependency maintenance, documentation and Palworld compatibility. The broader multi-game / device-sync product will be developed separately.
+> **Status:** `v2.2.2` remains the stable Palworld reference release. `main` additionally contains the experimental Valheim 1.0 adapter, managed-computer authorization and the modularized backend introduced after that release. Those development-tree features are not part of the `v2.2.2` support promise. A broader multi-game / device-sync product is still outside this repository.
 
 > **Development note:** the current development tree contains an experimental Valheim 1.0 Windows adapter. It reuses the generic backend contract but is not part of the `v2.2.2` stable release and should not be used on the only copy of a real world before its four-host acceptance test passes.
 
@@ -21,7 +21,7 @@
 
 A shared ZIP, network folder or cloud directory does not establish a single source of truth. Two hosts can start divergent copies, timestamps can change while files are copied, and a perfectly valid directory may belong to a different world.
 
-Save Sync separates the game server from the authoritative save store:
+Save Sync separates the game server from the authoritative save store. The diagram below shows the stable Palworld v2.2.2 flow:
 
 ```mermaid
 flowchart LR
@@ -34,19 +34,19 @@ flowchart LR
   B -->|localhost REST| PB[PalServer]
 ```
 
-The active gaming PC runs PalServer. Save Sync keeps the authoritative version, arbitrates the session lock and rejects stale uploads or saves from another world.
+The active gaming PC runs the selected dedicated server. Save Sync keeps the authoritative version, arbitrates the session lock and rejects stale uploads or saves from another world. The stable `v2.2.2` workflow uses Palworld; the experimental Valheim workflow on `main` uses the same backend contract with a game-specific client adapter.
 
 ## Safety properties
 
 - backend-assigned monotonically increasing integer versions;
 - optimistic concurrency through `baseVersion`;
 - exclusive lock with `sessionId`, TTL and heartbeat;
-- adapter-defined save identity; Palworld uses `worldGuid`;
+- adapter-defined save identity; Palworld uses `worldGuid`, while experimental Valheim uses its signed 64-bit `worldUid`;
 - server-side SHA-256 verification;
 - defensive ZIP validation against path traversal, symlinks, entry floods and ZIP bombs;
 - immutable publication before SQLite moves the authoritative pointer;
 - restore creates a **new** version instead of rewriting history;
-- per-machine Bearer tokens stored only as hashes;
+- Bearer tokens stored only as hashes, with optional per-computer binding for managed-host games;
 - Windows DPAPI for client-side secrets;
 - configurable per-slot retention;
 - durable external-backup queue supervised outside Gunicorn, with timeout, retry and audit trail;
@@ -115,7 +115,7 @@ status → lock → download if needed → start → heartbeat
 
 The client verifies the real `worldGuid` through Palworld's local REST API before starting and before publishing. **Do not expose Palworld's REST port through your router.**
 
-Read [client/README.md](client/README.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md) before first production use.
+Read [client/README.md](client/README.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md) before first production use. For development-tree Valheim testing, use [docs/VALHEIM.md](docs/VALHEIM.md) and the dedicated [four-host acceptance checklist](client/MANUAL-ACCEPTANCE-VALHEIM.md); do not treat the experimental adapter as part of the stable release.
 
 ## Durable backups
 
@@ -139,9 +139,9 @@ Use [SECURITY.md](SECURITY.md) for vulnerabilities. Use [GitHub Discussions](htt
 
 The backend retains generic primitives (`gameKey`, `saveIdentity`, adapters), and the repository keeps technical documentation for that design. However, **the stable product in this repository supports Palworld**.
 
-An experimental Valheim adapter is developed behind the same isolation boundary: it requires its own `gameKey`, database and storage root and does not change Palworld's legacy API/REST behavior.
+An experimental Valheim adapter now exists on `main` behind the same isolation boundary. It requires its own `gameKey`, database and storage root, uses folder-based Valheim 1.0 saves plus intrinsic `worldUid`, and does not change Palworld's legacy API/REST behavior.
 
-The development backend also includes schema-4 web management for authorized users and physical host PCs behind the per-game `managedHosts` capability. It is enabled for the experimental Valheim deployment and disabled for Palworld. Authentik remains the identity provider; Save Sync stores roles, registered `ClientId` values and optional computer-bound sync tokens. This supports groups where several distinct computers may take turns hosting one authoritative save while the global lock prevents simultaneous writers.
+The development backend also includes schema-4 web management for authorized users and physical host PCs behind the per-game `managedHosts` capability. It is enabled for the experimental Valheim deployment and disabled for Palworld. Authentik remains the identity provider; Save Sync stores roles, registered `ClientId` values and optional computer-bound sync tokens. This supports groups where several distinct computers may take turns hosting one authoritative save while the global lock prevents simultaneous writers. Computer-bound tokens are sync-only and cannot perform administrative operations.
 
 A broader product covering multi-game installations, automatic save discovery, multiple server instances, device-to-device cloud save synchronization and a cross-platform agent is intentionally outside this repository's maintenance scope.
 

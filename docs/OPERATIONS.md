@@ -1,6 +1,6 @@
 # Deployment and operations
 
-> **Stable scope:** this repository is maintained as the Palworld reference implementation. Generic `gameKey` primitives remain part of the existing architecture, but other games are not promised support here.
+> **Stable scope:** `v2.2.2` is maintained as the Palworld reference release. `main` also contains an experimental Valheim deployment profile and managed-host capability. Treat those development-tree features as pre-release and keep them isolated from stable Palworld data.
 
 ## Production preparation
 
@@ -61,6 +61,8 @@ The two final secrets must be independent, random values of at least 32 characte
 When `game.json` enables `managedHosts`, `SAVE_SYNC_WEB_USERS` and `SAVE_SYNC_USER_IDENTITIES_JSON` seed users that do not already exist. Schema 4 then makes the database authoritative for subsequent role, display-name, slot and enabled/disabled changes, so restarting the container does not overwrite panel-managed access. Authentik still authenticates the username; Save Sync decides whether that username is active and which computers it may use. With `managedHosts` disabled, as in Palworld, the existing config-managed access behavior is preserved.
 
 For games with `managedHosts` enabled, administrators can manage users, computers and computer-bound API tokens from `/games/<gameKey>`. Register each physical PC with a unique stable `ClientId`, then create a token for that computer and put that token only on that PC. Managed lock acquisition requires a computer-bound token whose registered `ClientId` exactly matches the client request. Legacy unbound tokens remain visible for migration/administration but cannot start a managed game session and should be rotated.
+
+The experimental Valheim descriptor enables `managedHosts`. Deploy it with its own database/storage and follow [VALHEIM.md](VALHEIM.md). Palworld leaves `managedHosts` disabled and retains the stable config-managed token/user behavior.
 
 ## Durable external backup and retention
 
@@ -194,4 +196,4 @@ The Palworld adapter prefers the remote `worldGuid` when its folder exists. Duri
 
 ### Heartbeat is degraded
 
-After repeated failures the client stops PalServer and does not automatically publish uncertain progress. This deliberately avoids continuing a game session without reliable exclusion.
+After repeated failures the client stops the game-server/writer process through the adapter's controlled shutdown path and does not automatically publish uncertain progress. Palworld uses its REST save/shutdown flow; experimental Valheim uses CTRL+C plus process-exit/final-generation validation. This deliberately avoids continuing a game session without reliable exclusion.

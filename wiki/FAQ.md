@@ -24,7 +24,11 @@ Not for production. Use the current stable tag, `v2.2.2`, and the client from th
 
 ## Can I use this repository with other games?
 
-The backend retains generic primitives, but this repository is maintained as the stable Palworld reference. Broad multi-game support belongs in the separate successor project.
+The stable release remains the Palworld reference. `main` now includes one experimental Valheim 1.0 adapter that exercises the generic contract, but that does not turn this repository into a generally supported multi-game platform. See [[Valheim-Experimental]].
+
+## Is Valheim included in v2.2.2?
+
+No. Valheim was merged after v2.2.2 and currently lives only in the development tree. Do not mix a v2.2.2 backend/client with a development Valheim component.
 
 ## Is Spanish documentation available?
 

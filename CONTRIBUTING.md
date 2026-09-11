@@ -2,7 +2,7 @@
 
 Thanks for helping maintain Dedicated Server Save Sync.
 
-`v2.2.2` is the current stable Palworld reference release. This repository accepts maintenance work, not a product redesign. The broader multi-game platform — including automatic discovery, multiple server instances and device-to-device cloud save sync — belongs in a separate project.
+`v2.2.2` is the current stable Palworld reference release. `main` also contains an experimental Valheim adapter and managed-host backend capability that may receive focused bug fixes, tests, documentation and safety hardening. This repository still does not accept a broad product redesign: automatic discovery, multiple server instances, general device/cloud sync and a universal cross-platform agent belong in a separate project.
 
 Before proposing a change, read [SECURITY.md](SECURITY.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -11,6 +11,8 @@ Before proposing a change, read [SECURITY.md](SECURITY.md) and [docs/ARCHITECTUR
 - reproducible bug fixes and regression tests;
 - security hardening;
 - compatibility fixes for new Palworld versions;
+- reproducible fixes and safety hardening for the experimental Valheim adapter;
+- compatibility fixes that preserve the existing per-game capability model (`managedHosts`, `saveIdentity`, isolated deployments);
 - dependency and CI maintenance;
 - documentation improvements;
 - small operational improvements that preserve the current model.
@@ -23,7 +25,7 @@ Out of scope here:
 - device/cloud synchronization as a new product mode;
 - incompatible architecture changes whose goal is to turn this reference into the future general platform.
 
-[docs/ADAPTING-OTHER-GAMES.md](docs/ADAPTING-OTHER-GAMES.md) remains a technical design reference, not an active support roadmap.
+[docs/ADAPTING-OTHER-GAMES.md](docs/ADAPTING-OTHER-GAMES.md) remains a technical design reference, not an open-ended support roadmap. Valheim is the one experimental adapter currently implemented in this repository.
 
 ## Before opening an issue
 

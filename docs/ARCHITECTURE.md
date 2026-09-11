@@ -108,6 +108,8 @@ A singleton `flock` prevents two supervisors from consuming the same storage con
 
 When a game configuration opts in with `managedHosts: true`, managed access separates people from machines. `users` represent identities authenticated by Authentik; `authorized_hosts` represent concrete computers through a stable `clientId`. A computer-bound Bearer token is valid only for its assigned active host and never grants administrative API privileges, even when the owning user is an administrator. Disabling a host does not delete an active lock: the client fails its next authenticated heartbeat and stops, while the lock remains until normal expiry or an explicit administrative force-unlock. The experimental Valheim configuration enables this capability; Palworld leaves it disabled so its stable UI and client authorization flow are unchanged.
 
+The Valheim client additionally treats the lock TTL as a shutdown-safety budget. It fails closed before the remaining lease enters the configured clean-shutdown reserve, so another host cannot become eligible through normal TTL expiry while `valheim_server.exe` is still expected to be shutting down.
+
 Each deployment manages one `gameKey` and uses one database and storage root. Another game must use another isolated Compose project/volume in this reference architecture.
 
 ## Save identity
@@ -124,6 +126,16 @@ normalization: uppercase
 
 The backend does not parse `Level.sav`; the Palworld adapter is responsible for obtaining the real game identity correctly.
 
+Experimental Valheim uses:
+
+```text
+identityField: worldUid
+kind:          signed int64
+normalization: canonical decimal string
+```
+
+The backend does not parse Valheim world files either. The Valheim adapter reads the committed `.fwl2` header, validates complete folder-based generations and supplies the canonical World UID.
+
 Historical restore preserves the same identity and publishes a **new version**. There is no normal endpoint for replacing the authoritative world with a different identity.
 
 ## Trust boundaries
@@ -138,7 +150,7 @@ Historical restore preserves the same identity and publishes a **new version**. 
 
 ## Retention
 
-Users are mapped to retention slots through `SAVE_SYNC_USER_IDENTITIES_JSON`. `SAVE_SYNC_RETENTION_PER_SLOT` keeps the newest N versions for each slot. Aliases for the same physical host should share a slot.
+`SAVE_SYNC_RETENTION_PER_SLOT` keeps the newest N versions for each retention slot. In unmanaged deployments such as Palworld, slots come from `SAVE_SYNC_USER_IDENTITIES_JSON`. In `managedHosts` deployments, that JSON is bootstrap-only and the persisted schema-4 `users.slot` value becomes authoritative for later panel-managed changes. Aliases for the same physical host should share a slot.
 
 Versions listed in `pending_backups` are retained in addition to the normal limit until the supervisor records a final result.
 

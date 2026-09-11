@@ -2,11 +2,11 @@
 
 > **Technical reference, not stable support.** `v2.2.2` is published and maintained as the Palworld reference implementation. This document preserves the generic design decisions and requirements another adapter would need to satisfy. The future multi-game/device-sync product will be developed separately.
 
-The development tree includes an experimental `valheim` adapter that exercises this contract against Valheim 1.0 folder-based world saves. It is intentionally isolated from the stable Palworld adapter and remains experimental until the real four-host acceptance checklist passes.
+The development tree includes an experimental `valheim` adapter that exercises this contract against Valheim 1.0 folder-based world saves. It is intentionally isolated from the stable Palworld adapter and remains experimental until the real four-host acceptance checklist passes. See [VALHEIM.md](VALHEIM.md) for the concrete implementation and operational boundary.
 
 ## Reusable primitives
 
-The backend provides game-independent building blocks: tokens/roles, exclusive lock with TTL/heartbeat, monotonic versioning and `baseVersion`, hashing and atomic publication, history/restore/audit, observable backup state and adapter-defined `saveIdentity`.
+The backend provides game-independent building blocks: tokens/roles, optional managed computers, exclusive lock with TTL/heartbeat, monotonic versioning and `baseVersion`, hashing and atomic publication, history/restore/audit, observable backup state and adapter-defined `saveIdentity`.
 
 Canonical routes live under `/api/games/{gameKey}`. Palworld keeps `worldGuid` and legacy route aliases only for compatibility with its adapter.
 
@@ -53,6 +53,8 @@ client/adapters/<game-key>/tests/*.Tests.ps1
 ```
 
 An experimental instance must use independent `.env`, storage and Compose project names. Never share a database or save directory between games.
+
+If a game requires explicit physical-PC authorization, its descriptor may opt into `managedHosts`. That capability is currently exercised by Valheim and deliberately disabled for Palworld. A new adapter should not enable it merely because multiple PCs exist; use it when host registration/token binding is part of the intended trust model.
 
 ## Client responsibilities
 

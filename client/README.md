@@ -25,7 +25,7 @@ The backend does not infer compatibility from `clientVersion`. In production, de
 7. Run `Test-Connection.cmd`.
 8. Start sessions with `Start-PalworldSync.cmd`.
 
-For experimental Valheim testing, copy `config.valheim.example.json` to `config.json`, configure the dedicated-server paths and `WorldName`, run the same secret/connection helpers, then start with `Start-ValheimSync.cmd`. Valheim credentials are stored separately under `data/valheim/`.
+For experimental Valheim testing from the development tree, copy `config.valheim.example.json` to `config.json`, configure the dedicated-server paths and `WorldName`, run the same secret/connection helpers, then start with `Start-ValheimSync.cmd`. Valheim credentials are stored separately under `data/valheim/`. Stable release ZIPs exclude these experimental Valheim files until the adapter is deliberately promoted to stable support.
 
 For a multi-PC Valheim group, register every possible server PC from the Save Sync web panel first. Give each machine a distinct stable `ClientId` and its own computer-bound token; four or more PCs may alternate against the same authoritative world, but the global lock permits only one active server session at a time.
 

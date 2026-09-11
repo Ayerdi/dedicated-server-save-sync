@@ -1,5 +1,5 @@
 name: Maintenance enhancement
-description: Propose a bounded improvement to the stable Palworld reference implementation.
+description: Propose a bounded improvement to the maintained Palworld / experimental Valheim implementation.
 title: "[Enhancement]: "
 labels:
   - enhancement
@@ -7,8 +7,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        This repository is in maintenance mode. Do not use this form for a multi-game redesign,
-        universal discovery, multiple server instances, device/cloud sync or a new cross-platform agent.
+        v2.2.2 remains the stable Palworld release; main also contains an experimental Valheim adapter.
+        Do not use this form for a broad multi-game redesign, universal discovery, multiple server
+        instances, device/cloud sync or a new cross-platform agent.
   - type: textarea
     id: problem
     attributes:
