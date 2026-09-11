@@ -15,6 +15,11 @@ command -v gh >/dev/null || { printf 'GitHub CLI (gh) is required.\n' >&2; exit 
 command -v git >/dev/null || { printf 'git is required.\n' >&2; exit 1; }
 cd "${ROOT_DIR}"
 
+if [[ "${SAVE_SYNC_INCLUDE_EXPERIMENTAL_VALHEIM:-0}" == "1" ]]; then
+  printf 'Stable release publication refuses experimental Valheim client files. Promote the adapter and update the release policy deliberately before publishing it as stable.\n' >&2
+  exit 1
+fi
+
 gh auth status >/dev/null 2>&1 || {
   printf 'GitHub CLI has no valid session. Run gh auth login.\n' >&2
   exit 1
@@ -66,7 +71,7 @@ if git show-ref --verify --quiet "refs/tags/v${VERSION}" || \
 fi
 
 bash scripts/check-repository.sh
-bash scripts/build-release.sh "${VERSION}"
+SAVE_SYNC_INCLUDE_EXPERIMENTAL_VALHEIM=0 bash scripts/build-release.sh "${VERSION}"
 archive="dist/dedicated-server-save-sync-client-v${VERSION}.zip"
 checksum="${archive}.sha256"
 first="$(cut -d' ' -f1 "${checksum}")"
@@ -74,7 +79,7 @@ first_copy="$(mktemp /tmp/save-sync-release.XXXXXX.zip)"
 trap 'rm -f -- "${first_copy}"' EXIT
 cp "${archive}" "${first_copy}"
 rm -f "${archive}" "${checksum}"
-bash scripts/build-release.sh "${VERSION}"
+SAVE_SYNC_INCLUDE_EXPERIMENTAL_VALHEIM=0 bash scripts/build-release.sh "${VERSION}"
 second="$(cut -d' ' -f1 "${checksum}")"
 test "${first}" = "${second}"
 cmp "${first_copy}" "${archive}"

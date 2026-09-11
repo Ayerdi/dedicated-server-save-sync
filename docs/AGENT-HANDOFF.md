@@ -1,6 +1,6 @@
 # Maintainer guide
 
-This document is the shortest safe path into the Palworld reference implementation. `v2.2.2` is the current stable maintenance release; the broader multi-game/device-sync product is developed outside this repository.
+This document is the shortest safe path into the current repository. `v2.2.2` remains the stable Palworld maintenance release. `main` additionally contains an experimental Valheim adapter, managed-host authorization and the modularized backend introduced after that release; the broader general multi-game/device-sync product is still outside this repository.
 
 ## Recommended reading order
 
@@ -9,9 +9,13 @@ This document is the shortest safe path into the Palworld reference implementati
 3. `docs/API.md`
 4. `client/README.md`
 5. `save_sync/app.py`
-6. `save_sync/backup_supervisor.py`
-7. `client/SyncGame.ps1`
-8. `client/adapters/palworld/Adapter.ps1`
+6. `save_sync/sessions.py`
+7. `save_sync/publications.py`
+8. `save_sync/database.py`
+9. `save_sync/backup_supervisor.py`
+10. `client/SyncGame.ps1`
+11. `client/adapters/palworld/Adapter.ps1`
+12. `docs/VALHEIM.md` and `client/adapters/valheim/Adapter.ps1` when touching the experimental Valheim flow.
 
 `docs/ADAPTING-OTHER-GAMES.md` is a design reference, not an active support roadmap.
 
@@ -22,6 +26,8 @@ This document is the shortest safe path into the Palworld reference implementati
 - `saveIdentity` is never invented or replaced to force publication.
 - The game/server writer must be stopped before the save is archived.
 - The client must not keep playing after persistent loss of remote exclusion.
+- A managed-host session must revalidate the owning user, exact token, host binding and host state inside the write transaction before trusted lock/session/publication changes.
+- A game process must not remain active into a lease-expiry window where another host could legitimately acquire the same authoritative save.
 - Failures preserve the save, any pending ZIP and the current authoritative version.
 - Pending backups stay in SQLite and protect their ZIP until a final known result.
 - Retention commits metadata before physically deleting ZIPs that are revalidated as unreferenced.
@@ -40,7 +46,7 @@ This document is the shortest safe path into the Palworld reference implementati
 
 ## Maintenance scope
 
-Appropriate: bugs/regressions, security, Palworld compatibility, dependency/CI maintenance, documentation and small compatible operational improvements.
+Appropriate: bugs/regressions, security, Palworld compatibility, focused fixes/hardening for the experimental Valheim adapter and managed-host capability, dependency/CI maintenance, documentation and small compatible operational improvements.
 
 Out of scope: universal save discovery, one installation managing multiple games/instances, device/cloud sync as a new product mode, a new cross-platform agent, or incompatible changes intended to turn this reference into the future general platform.
 

@@ -32,6 +32,10 @@ Descarga `dedicated-server-save-sync-client-v2.2.2.zip` y su `.sha256` desde **R
 
 Backend y cliente deben proceder de la misma release del producto.
 
+### Valheim experimental
+
+Valheim no forma parte del paquete estable v2.2.2. Para pruebas de desarrollo, usa backend y cliente del mismo commit/artefacto probado de `main`, despliega `gameKey=valheim` con base/storage independientes y sigue [[Valheim-Experimental-Espanol]] y [[Equipos-Gestionados]]. No sustituyas las instrucciones estables anteriores por `main` para un mundo Palworld de producción.
+
 Para producción consulta [OPERATIONS.md](https://github.com/Ayerdi/dedicated-server-save-sync/blob/v2.2.2/docs/OPERATIONS.md).
 
 [[Installation|Read in English]]

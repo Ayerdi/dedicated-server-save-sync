@@ -7,7 +7,7 @@ SQLite stores the schema level in `PRAGMA user_version`. The current application
 - A compatible schema `0` database is normalized to `4` after required columns and triggers are validated.
 - Schema `3` introduced `pending_backups`, which is the durable queue consumed by the external backup supervisor.
 - Schema `4` adds persisted display/retention identity plus the generic storage needed by opt-in managed-computer deployments: registered hosts, optional computer-bound API tokens and computer provenance for locks/publications. The experimental Valheim configuration opts in; Palworld does not.
-- Existing schema `3` users and tokens remain valid after migration. Legacy unbound tokens are intentionally preserved until an administrator rotates them to computer-bound tokens.
+- Existing schema `3` users and tokens are preserved after migration and remain usable where their old authorization model is compatible. In a `managedHosts` deployment, legacy unbound tokens are **not** valid managed-session credentials: they cannot acquire/continue a managed sync session and should be rotated to computer-bound tokens. Compatible legacy/admin uses remain available for migration and administration.
 - If a schema-3 database is upgraded into a game with `managedHosts: true`, any pre-existing active lock has no trusted computer provenance and is therefore fail-closed: it cannot heartbeat or publish. The lock is preserved until normal expiry or explicit administrative force-unlock so a second host is never released early.
 - Repeated startup keeps `user_version=4`.
 - A database with a newer version is rejected. The application never attempts an implicit downgrade.

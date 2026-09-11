@@ -2,7 +2,7 @@
 
 La retención operativa y el backup externo son mecanismos distintos:
 
-- `SAVE_SYNC_RETENTION_PER_SLOT` controla cuántas versiones canónicas se conservan por slot;
+- `SAVE_SYNC_RETENTION_PER_SLOT` controla cuántas versiones canónicas se conservan por slot de retención (no necesariamente por equipo físico);
 - `SAVE_SYNC_POST_PUBLISH_COMMAND` define el comando de backup externo;
 - `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS` limita cada intento.
 

@@ -40,6 +40,17 @@ Palworld example:
 }
 ```
 
+Experimental Valheim example:
+
+```json
+{
+  "saveIdentity": "2352155610",
+  "worldUid": "2352155610"
+}
+```
+
+Valheim's identity is the intrinsic signed 64-bit World UID read by the client from committed `.fwl2` metadata.
+
 ## Status
 
 ```http
@@ -66,7 +77,7 @@ Uninitialized response:
 }
 ```
 
-When locked, `lock` contains only `owner`, `createdAt`, `lastHeartbeatAt` and `expiresAt`. It never contains `sessionId`.
+When locked, `lock` contains `owner`, `createdAt`, `lastHeartbeatAt` and `expiresAt`. Managed-host games additionally expose `clientId` and `hostName`. It never contains `sessionId`.
 
 ## Acquire a lock
 
@@ -183,7 +194,7 @@ Other important failures:
 GET /history
 ```
 
-Each version includes `version`, `saveIdentity`, adapter-specific identity, `updatedBy`, `updatedAt`, `size`, `sha256`, `baseVersion` and `restoredFromVersion`.
+Each version includes `version`, `saveIdentity`, adapter-specific identity, `updatedBy`, `updatedAt`, `size`, `sha256`, `baseVersion` and `restoredFromVersion`. Managed-host games additionally expose the publishing `clientId` and `hostName` when provenance is available.
 
 Administrative operations:
 
@@ -209,6 +220,8 @@ Restore publishes a **new increasing version** with the same save identity.
 Creating a token returns its plaintext value once. For deployments whose game configuration enables `managedHosts`, every new sync token requires `hostId` and is bound to that registered computer. A managed lock is accepted only when that bound host exactly matches the request `clientId`. Computer-bound tokens are sync-only and cannot call administrative endpoints, even when their owning user has role `admin`. History download/restore/delete, force-unlock, access management and audit endpoints require an administrator session or a compatible legacy unbound admin token; normal game operations accept `admin` or `player`.
 
 The experimental Valheim configuration currently enables that managed-host capability; Palworld leaves it disabled and keeps its existing token-management flow. When enabled, the panel uses these endpoints to manage Authentik-authorized usernames and their physical computers. Creating a Save Sync user does not create the corresponding Authentik account. Disabling a computer blocks new locks and makes its bound tokens unusable while the computer is disabled; an already active lock is deliberately preserved until TTL expiry or explicit force-unlock to avoid allowing a second host to start while the first one may still be shutting down.
+
+`/admin/users` and `/admin/hosts` are registered only for games with `managedHosts: true`. They intentionally remain absent from Palworld's stable route surface.
 
 ## External-backup status
 

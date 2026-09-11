@@ -2,6 +2,8 @@
 
 This mode validates the backend, API and persistence without Traefik or Authentik. It binds only to `127.0.0.1` and disables HTTPS inside the local test environment. **Never expose this configuration to the Internet.**
 
+The checked-in `.env.local.example` and automated `scripts/local-e2e.sh` exercise the stable Palworld-style unmanaged flow. Simply changing `SAVE_SYNC_GAME_KEY=valheim` is not a complete Valheim test because Valheim enables `managedHosts` and therefore requires a registered computer plus a host-bound token. Use [VALHEIM.md](VALHEIM.md), the managed-host backend tests and the real acceptance checklist for that path.
+
 ## Manual startup
 
 ```bash

@@ -23,6 +23,10 @@ The API token and Palworld REST password are stored using Windows DPAPI. Do not 
 
 Palworld's REST API must listen on localhost only. Do not expose that port through your router.
 
+## Experimental Valheim client
+
+The development tree also contains `config.valheim.example.json`, `Start-ValheimSync.cmd` and `client/adapters/valheim/`. Valheim credentials are stored separately under `data/valheim/`, and each PC must use its own token registered through [[Managed-Computers]]. See [[Valheim-Experimental]] before testing it.
+
 > `clientVersion=1.2.0` is the internal Palworld adapter/client component version. It is independent from the product release number `v2.2.2`.
 
 [[Cliente-Windows|Leer en español]]

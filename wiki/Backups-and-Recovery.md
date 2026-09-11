@@ -2,7 +2,7 @@
 
 Operational retention and external backup are separate mechanisms:
 
-- `SAVE_SYNC_RETENTION_PER_SLOT` controls how many canonical versions are retained per host slot;
+- `SAVE_SYNC_RETENTION_PER_SLOT` controls how many canonical versions are retained per retention slot;
 - `SAVE_SYNC_POST_PUBLISH_COMMAND` defines the external backup command;
 - `SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS` limits one backup attempt.
 

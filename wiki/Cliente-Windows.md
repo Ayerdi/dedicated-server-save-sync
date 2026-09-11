@@ -21,6 +21,10 @@ El token y la contraseña REST se guardan mediante Windows DPAPI. No copies `dat
 
 La REST de Palworld debe escuchar únicamente en localhost. No abras ese puerto en el router.
 
+## Cliente Valheim experimental
+
+La rama de desarrollo también contiene `config.valheim.example.json`, `Start-ValheimSync.cmd`/`Iniciar-ValheimSync.cmd` y `client/adapters/valheim/`. Los secretos de Valheim se guardan por separado bajo `data/valheim/`, y cada PC debe usar su propio token registrado mediante [[Equipos-Gestionados]]. Consulta [[Valheim-Experimental-Espanol]] antes de probarlo.
+
 > `clientVersion=1.2.0` es la versión interna del componente/adaptador Palworld y es independiente de la release completa `v2.2.2`.
 
 [[Windows-Client|Read in English]]

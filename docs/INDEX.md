@@ -7,13 +7,14 @@
 - [Wiki](https://github.com/Ayerdi/dedicated-server-save-sync/wiki) — user guides in **English and Spanish**.
 - [Local development](LOCAL-DEVELOPMENT.md) — isolated localhost stack and E2E.
 - [Operations](OPERATIONS.md) — production deployment, backups and rollback.
+- [Experimental Valheim guide](VALHEIM.md) — isolated deployment, managed computers, client lifecycle and recovery rules for the development-tree adapter.
 
 ## Contracts and design
 
 - [HTTP API](API.md) — endpoints, errors and curl examples.
 - [Architecture and invariants](ARCHITECTURE.md) — authority, transactions, locks and crash safety.
 - [Migrations](MIGRATIONS.md) — schema versioning, backups and rollback.
-- [Multi-game design reference](ADAPTING-OTHER-GAMES.md) — generic abstractions kept for future work, not an active support promise.
+- [Multi-game design reference](ADAPTING-OTHER-GAMES.md) — generic abstractions, including the boundary demonstrated by the experimental Valheim adapter; not an open-ended support promise.
 - [Real Palworld acceptance test](../client/MANUAL-ACCEPTANCE.md) — controlled two-host regression procedure.
 - [Experimental Valheim acceptance test](../client/MANUAL-ACCEPTANCE-VALHEIM.md) — folder-save, CTRL+C shutdown and A→B→C→D→A validation.
 

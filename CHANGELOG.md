@@ -4,7 +4,16 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
-No pending changes after v2.2.2.
+- Added an experimental Valheim 1.0 Windows adapter on `main`, including folder-based world handling, intrinsic signed 64-bit `worldUid` identity, controlled CTRL+C shutdown, local rollback, pending-upload recovery and a real four-host acceptance checklist.
+- Added opt-in `managedHosts` support with registered physical computers, stable `ClientId` values, host-bound sync tokens, host provenance for locks/publications and panel administration. Palworld keeps the unmanaged legacy behavior.
+- Added schema version 4 for managed-host provenance plus persisted display/retention identity, including fail-closed handling for pre-managed active locks.
+- Refactored the Flask backend into explicit database, game-config, identity, session, publication, managed-access, admin, panel and retention modules while preserving Palworld v2.2.2 API/panel behavior.
+- Hardened publication and restore race handling with transactional user/token/host revalidation, filesystem compensation and explicit preservation of expected rejection audit semantics.
+- Hardened Valheim heartbeat/shutdown safety so the client fails closed while enough lease time remains for a controlled server shutdown.
+- Switched Valheim secret protection to direct Windows DPAPI `CurrentUser` calls and documented that machine authorization is enforced by Save Sync host/token binding rather than DPAPI itself.
+- Added full-history Gitleaks handling for one exact synthetic test-token false positive; no real credential was committed.
+- Updated Pages, Wiki and repository documentation to distinguish the stable Palworld release from the experimental Valheim development tree.
+- Hardened stable release packaging so experimental Valheim client files are excluded by default and cannot be accidentally published through the stable release helper.
 
 ## 2.2.2
 

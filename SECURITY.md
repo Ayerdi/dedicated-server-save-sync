@@ -34,8 +34,10 @@ Include the affected version, impact, minimal reproduction steps and known mitig
 ## Threat model notes
 
 - A stolen Bearer token has that user's privileges until it is revoked.
+- In a `managedHosts` deployment, a computer-bound token is additionally restricted to its registered active host and matching `ClientId`; it is not an administrative credential even when owned by an administrator.
 - The backend validates identity metadata and ZIP structure; it does not semantically parse `Level.sav`.
 - DPAPI protects local secrets at rest, not against malware running as the same Windows user.
+- DPAPI `CurrentUser` is user-profile scoped protection. Do not rely on it as the machine-authorization boundary; provision a distinct token/secrets file per authorized PC.
 - The reverse proxy must strip client-supplied Authentik identity headers.
 - SQLite and ZIP confidentiality still depend on correct host filesystem permissions.
 - The Gitleaks and repository checks reduce accidental exposure; they do not replace secret rotation after a leak.
