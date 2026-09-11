@@ -11,7 +11,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from save_sync.app import SCHEMA_VERSION
+from save_sync.database import SCHEMA_VERSION
+from save_sync.identities import load_identities
 from save_sync.retention import (
     prune_canonical_versions_locked,
     reconcile_unreferenced_files_locked,
@@ -30,31 +31,6 @@ def connect_database(db_path):
     db.execute("PRAGMA foreign_keys=ON")
     db.execute("PRAGMA busy_timeout=30000")
     return db
-
-
-def load_identities(raw):
-    try:
-        value = json.loads(raw)
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("SAVE_SYNC_USER_IDENTITIES_JSON is not valid JSON") from exc
-    if not isinstance(value, dict):
-        raise RuntimeError(  # noqa: TRY004
-            "SAVE_SYNC_USER_IDENTITIES_JSON must be a JSON object"
-        )
-    result = {}
-    for username, profile in value.items():
-        if not isinstance(profile, dict):
-            raise RuntimeError(  # noqa: TRY004
-                f"Invalid identity profile for {username}"
-            )
-        display = str(profile.get("displayName", "")).strip()
-        slot = str(profile.get("slot", "")).strip()
-        if not str(username).strip() or not display or not slot:
-            raise RuntimeError(
-                "Each identity requires non-empty username, displayName and slot values"
-            )
-        result[str(username).casefold()] = {"displayName": display, "slot": slot}
-    return result
 
 
 class BackupSupervisor:

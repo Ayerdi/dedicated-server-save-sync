@@ -19,3 +19,6 @@ client/data/
 *.log
 PalWorldSettings.ini
 GameUserSettings.ini
+
+.tmp-pester/
+testResults.xml

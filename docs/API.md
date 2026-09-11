@@ -192,6 +192,12 @@ GET    /history/{version}/download
 POST   /history/{version}/restore
 DELETE /history/{version}
 POST   /admin/force-unlock
+GET    /admin/users
+POST   /admin/users
+PATCH  /admin/users/{id}
+GET    /admin/hosts
+POST   /admin/hosts
+PATCH  /admin/hosts/{id}
 GET    /admin/tokens
 POST   /admin/tokens
 DELETE /admin/tokens/{id}
@@ -200,7 +206,9 @@ GET    /admin/audit?limit=100
 
 Restore publishes a **new increasing version** with the same save identity.
 
-Creating a token returns its plaintext value once. History download/restore/delete, force-unlock, token management and audit endpoints require `admin`; normal game operations accept `admin` or `player`.
+Creating a token returns its plaintext value once. For deployments whose game configuration enables `managedHosts`, every new sync token requires `hostId` and is bound to that registered computer. A managed lock is accepted only when that bound host exactly matches the request `clientId`. Computer-bound tokens are sync-only and cannot call administrative endpoints, even when their owning user has role `admin`. History download/restore/delete, force-unlock, access management and audit endpoints require an administrator session or a compatible legacy unbound admin token; normal game operations accept `admin` or `player`.
+
+The experimental Valheim configuration currently enables that managed-host capability; Palworld leaves it disabled and keeps its existing token-management flow. When enabled, the panel uses these endpoints to manage Authentik-authorized usernames and their physical computers. Creating a Save Sync user does not create the corresponding Authentik account. Disabling a computer blocks new locks and makes its bound tokens unusable while the computer is disabled; an already active lock is deliberately preserved until TTL expiry or explicit force-unlock to avoid allowing a second host to start while the first one may still be shutting down.
 
 ## External-backup status
 

@@ -253,6 +253,11 @@ def test_14_version_conflict(client, app):
         response.status_code == 409
         and response.get_json()["error"] == "version_conflict"
     )
+    with app.extensions["save_sync_connect"]() as db:
+        rejection = db.execute(
+            "SELECT details FROM audit WHERE event='version_conflict' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert json.loads(rejection["details"])["received"] == 0
 
 
 def test_15_failed_upload_preserves_previous(client):

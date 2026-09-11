@@ -2,6 +2,25 @@
 
 This document describes the safety properties that define Save Sync. They are more important than any individual implementation detail.
 
+## Code organization
+
+The Flask application is composed from small modules with explicit responsibilities:
+
+- `save_sync/app.py` is the Flask composition/HTTP layer: configuration, authentication, request/response translation and service wiring;
+- `save_sync/database.py` owns the SQLite connection policy, schema, migrations and bootstrap;
+- `save_sync/domain.py` defines transport-agnostic domain errors used by the HTTP layer and services;
+- `save_sync/sessions.py` owns lock acquisition, heartbeat/unlock and managed-host session revalidation;
+- `save_sync/publications.py` owns ZIP staging/validation, atomic publication and two-phase historical restore;
+- `save_sync/game_config.py` loads and validates per-game identity/capability configuration;
+- `save_sync/identities.py` parses user display/retention identities shared by the web application and backup supervisor;
+- `save_sync/managed.py` registers the opt-in managed-user/computer endpoints used only when `managedHosts: true`;
+- `save_sync/admin.py` registers generic administrative endpoints such as tokens, audit and force-unlock;
+- `save_sync/panels.py` contains the managed and legacy panel templates and panel route wiring;
+- `save_sync/retention.py` contains retention/reconciliation primitives;
+- `save_sync/backup_supervisor.py` owns the independent durable backup worker.
+
+Game adapters remain outside the backend under `client/adapters/<game>/`. The backend never imports game-specific save parsers. Palworld keeps the unmanaged compatibility surface, while games such as Valheim can opt into managed computers through configuration.
+
 ## Sources of authority
 
 `versions.version` defines progress order. **File timestamps never do.** `current_save` points to one immutable published version.
@@ -41,7 +60,7 @@ A publication follows this order:
 
 1. receive the upload into private temporary storage;
 2. calculate SHA-256 and validate the ZIP defensively;
-3. inside the write transaction, re-check lock, version and identity;
+3. inside the write transaction, re-check the authoritative identity and base version, then the lock/session plus current user/token/host authorization for managed deployments;
 4. publish the ZIP under an immutable historical name with `os.replace`;
 5. sync the containing directory;
 6. insert the new version and move `current_save`;
@@ -51,6 +70,8 @@ A publication follows this order:
 10. in a second phase, revalidate filesystem references before deleting unreferenced ZIPs.
 
 An exception before commit leaves the previous authoritative version in place. A crash after the database commit may leave an orphan file, which is safe and can be reconciled later.
+
+Historical restore deliberately uses two write transactions. The first verifies that no lock exists and snapshots the source/current metadata; the source ZIP is then copied and hashed outside any SQLite write lock. A second `BEGIN IMMEDIATE` re-checks the lock, current version, source metadata and identity immediately before publishing the restored copy as a new immutable version. This avoids holding the database write lock during a potentially large file copy without weakening the final race checks.
 
 ## Durable backup supervisor
 
@@ -79,11 +100,13 @@ A singleton `flock` prevents two supervisors from consuming the same storage con
 
 - SQLite uses WAL mode and `busy_timeout`.
 - Schema creation/migration is protected by a multiprocess `flock`.
-- `PRAGMA user_version=3` identifies the supported schema.
+- `PRAGMA user_version=4` identifies the supported schema.
 - A newer schema is rejected rather than implicitly downgraded.
 - Two simultaneous lock acquisitions produce one winner.
 - Two uploads based on the same version cannot both publish.
 - Backup queue insertion and publication share one SQLite commit, so a confirmed version cannot require backup without having been queued.
+
+When a game configuration opts in with `managedHosts: true`, managed access separates people from machines. `users` represent identities authenticated by Authentik; `authorized_hosts` represent concrete computers through a stable `clientId`. A computer-bound Bearer token is valid only for its assigned active host and never grants administrative API privileges, even when the owning user is an administrator. Disabling a host does not delete an active lock: the client fails its next authenticated heartbeat and stops, while the lock remains until normal expiry or an explicit administrative force-unlock. The experimental Valheim configuration enables this capability; Palworld leaves it disabled so its stable UI and client authorization flow are unchanged.
 
 Each deployment manages one `gameKey` and uses one database and storage root. Another game must use another isolated Compose project/volume in this reference architecture.
 

@@ -15,7 +15,7 @@ def prune_canonical_versions_locked(
     pointing to a ZIP that has already been deleted.
     """
     rows = db.execute(
-        "SELECT v.version,v.path,u.username FROM versions v "
+        "SELECT v.version,v.path,u.username,u.slot FROM versions v "
         "JOIN users u ON u.id=v.updated_by ORDER BY v.version DESC"
     ).fetchall()
     pending_backups = {
@@ -23,7 +23,7 @@ def prune_canonical_versions_locked(
     }
     kept_per_slot = {}
     for row in rows:
-        slot = identity_for_username(row["username"])["slot"]
+        slot = row["slot"] or identity_for_username(row["username"])["slot"]
         kept = kept_per_slot.get(slot, 0)
         if kept >= retention_per_slot and row["version"] not in pending_backups:
             db.execute("DELETE FROM versions WHERE version=?", (row["version"],))

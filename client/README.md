@@ -2,14 +2,15 @@
 
 `SyncGame.ps1` is the common Windows PowerShell 5.1 launcher. It reads `Adapter` and `GameKey`, validates the adapter manifest and hands control to `adapters/<adapter>/Adapter.ps1`. Machine-specific values live only in `config.json` and DPAPI-protected secrets.
 
-> **Stable scope:** product release `v2.2.2` supports Palworld. Adapter abstractions remain because they are part of the architecture, but new games and the future multi-game/device-sync redesign are outside this repository's maintenance roadmap.
+> **Stable scope:** product release `v2.2.2` supports Palworld. The development tree also contains an experimental Valheim 1.0 Windows adapter; it is not part of the `v2.2.2` support promise and must pass its real four-host acceptance checklist before production use.
 
 ## Product version vs client version
 
 Two version numbers exist intentionally:
 
 - `v2.2.2`: product release covering backend, packaged client, docs and release process;
-- `clientVersion=1.2.0`: the Palworld adapter/client component version written to ZIP manifests and diagnostics.
+- `clientVersion=1.2.0`: the Palworld adapter/client component version written to ZIP manifests and diagnostics;
+- `clientVersion=0.1.0`: the initial experimental Valheim adapter version.
 
 The backend does not infer compatibility from `clientVersion`. In production, deploy backend and client from the **same product release**.
 
@@ -24,9 +25,13 @@ The backend does not infer compatibility from `clientVersion`. In production, de
 7. Run `Test-Connection.cmd`.
 8. Start sessions with `Start-PalworldSync.cmd`.
 
+For experimental Valheim testing, copy `config.valheim.example.json` to `config.json`, configure the dedicated-server paths and `WorldName`, run the same secret/connection helpers, then start with `Start-ValheimSync.cmd`. Valheim credentials are stored separately under `data/valheim/`.
+
+For a multi-PC Valheim group, register every possible server PC from the Save Sync web panel first. Give each machine a distinct stable `ClientId` and its own computer-bound token; four or more PCs may alternate against the same authoritative world, but the global lock permits only one active server session at a time.
+
 The older `Configurar-secretos.cmd`, `Probar-conexion.cmd` and `Iniciar-PalworldSync.cmd` names remain as compatibility aliases.
 
-Do not copy `data/secrets.json` between machines. DPAPI binds it to the Windows user and machine that created it.
+Treat DPAPI secret files as local per-host state: Palworld uses `data/secrets.json` and Valheim uses `data/valheim/secrets.json`. Both use Windows user-scoped DPAPI protection, so the files are tied to the protecting Windows user profile and are not a supported way to move credentials between hosts. Provision a separate API token and secrets file on each authorized PC instead of copying one from another machine.
 
 ## Important configuration fields
 
@@ -43,6 +48,8 @@ Do not copy `data/secrets.json` between machines. DPAPI binds it to the Windows 
 - `HeartbeatSeconds`: must be clearly shorter than the backend lock TTL.
 - `LocalBackupRetention`: number of local pre-session/download backup ZIPs.
 
+Valheim uses `ServerRoot`, `ServerExecutable`, `SaveRoot`, `WorldName`, `ServerName`, `ServerPort` and `StartupTimeoutSeconds`. `SaveRoot` is the Valheim data root that contains `worlds_local`; the adapter treats the entire `worlds_local/<WorldName>` directory as one save unit. Its authoritative `saveIdentity` is the intrinsic signed 64-bit World UID read from `_main.<generation>.fwl2`, not a timestamp or directory hash. Startup is confirmed from Valheim's own `Game server connected` log marker before the session is presented as ready.
+
 ## Normal use
 
 Launch `Start-PalworldSync.cmd`. Do not start `PalServer.exe` independently.
@@ -51,9 +58,11 @@ The client acquires the remote lock, downloads the authoritative version when ne
 
 If the client repeatedly loses remote exclusion, it stops PalServer rather than continuing without reliable ownership.
 
+The Valheim adapter follows the same lock/heartbeat rules, but its shutdown path is deliberately stricter: it starts `valheim_server.exe` in an isolated hidden console, sends CTRL+C to that console, waits for the process to exit, verifies a complete Valheim 1.0 generation and only then archives. An unexpected process exit is left pending and is never published automatically.
+
 ## Recovery files
 
-Files under `data/` include:
+Palworld stores these under `data/`; Valheim stores the equivalent files under `data/valheim/`:
 
 - `state.json`: last confirmed remote version;
 - `pending-session.json`: locally modified session not yet confirmed remotely;
@@ -73,4 +82,4 @@ When several local Palworld worlds exist, the client prefers the `worldGuid` alr
 Invoke-Pester -Path .\client -CI
 ```
 
-CI cannot prove Palworld's real REST behavior or semantic world consistency. Use [MANUAL-ACCEPTANCE.md](MANUAL-ACCEPTANCE.md) for a controlled two-host regression test.
+CI cannot prove a real game server's save/shutdown semantics. Use [MANUAL-ACCEPTANCE.md](MANUAL-ACCEPTANCE.md) for Palworld and [MANUAL-ACCEPTANCE-VALHEIM.md](MANUAL-ACCEPTANCE-VALHEIM.md) for the experimental Valheim adapter.
