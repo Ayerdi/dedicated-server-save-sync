@@ -88,7 +88,7 @@ class SessionService:
 
     def active_lock(self, db, clear_expired=True):
         row = db.execute(
-            "SELECT l.*,u.username,h.name host_name FROM active_lock l "
+            "SELECT l.*,u.username,h.name host_name,h.last_ip host_ip FROM active_lock l "
             "JOIN users u ON u.id=l.owner_user_id "
             "LEFT JOIN authorized_hosts h ON h.id=l.host_id WHERE singleton=1"
         ).fetchone()
@@ -116,9 +116,10 @@ class SessionService:
             result.update(clientId=row["client_id"], hostName=row["host_name"])
         return result
 
-    def acquire(self, user, *, owner, client_id, session_id):
+    def acquire(self, user, *, owner, client_id, session_id, client_ip=None):
         owner = str(owner or "").strip()
         client_id = str(client_id or "").strip()
+        client_ip = str(client_ip or "").strip()[:45] or None
         if not owner or not client_id or len(owner) > 100 or len(client_id) > 200:
             raise SaveSyncDomainError(
                 "invalid_request", "owner and clientId are required.", 400
@@ -186,8 +187,9 @@ class SessionService:
             )
             if host:
                 db.execute(
-                    "UPDATE authorized_hosts SET last_seen_at=? WHERE id=?",
-                    (self.iso(now), host["id"]),
+                    "UPDATE authorized_hosts SET last_seen_at=?,"
+                    "last_ip=COALESCE(?,last_ip) WHERE id=?",
+                    (self.iso(now), client_ip, host["id"]),
                 )
             self.audit(db, "lock_acquired", user, True, client_id, baseVersion=base)
 
@@ -198,8 +200,9 @@ class SessionService:
             "saveIdentity": version["save_identity"] if version else None,
         }
 
-    def action(self, user, *, session_id, event, delete=False):
+    def action(self, user, *, session_id, event, delete=False, client_ip=None):
         session_id = str(session_id or "")
+        client_ip = str(client_ip or "").strip()[:45] or None
         if not session_id:
             raise SaveSyncDomainError(
                 "invalid_request", "sessionId is required.", 400
@@ -316,8 +319,9 @@ class SessionService:
             self.audit(db, event, user, True, row["client_id"])
             if row["host_id"] is not None:
                 db.execute(
-                    "UPDATE authorized_hosts SET last_seen_at=? WHERE id=?",
-                    (self.iso(now), row["host_id"]),
+                    "UPDATE authorized_hosts SET last_seen_at=?,"
+                    "last_ip=COALESCE(?,last_ip) WHERE id=?",
+                    (self.iso(now), client_ip, row["host_id"]),
                 )
 
         return {"expiresAt": self.iso(expires)} if expires else {}

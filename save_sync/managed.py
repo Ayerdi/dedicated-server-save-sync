@@ -1,6 +1,71 @@
+import ipaddress
 import sqlite3
 
 from flask import g, jsonify, request
+
+# Fail-closed default: only loopback is trusted out of the box. Deployments
+# behind Docker/Traefik/Tailscale must set SAVE_SYNC_TRUSTED_PROXY_CIDRS to
+# the real proxy ranges (e.g. the Traefik network CIDR); anything else makes
+# the direct peer the recorded IP and X-Forwarded-For is ignored.
+DEFAULT_TRUSTED_PROXY_CIDRS = ("127.0.0.0/8", "::1/128")
+
+
+def _as_cidrs(value):
+    if isinstance(value, str):
+        parts = [part.strip() for part in value.split(",") if part.strip()]
+    else:
+        parts = list(value)
+    return [ipaddress.ip_network(part) for part in parts]
+
+
+def parse_trusted_proxy_cidrs(value):
+    """Validate the proxy CIDR setting once at startup; fail at deploy time."""
+    try:
+        networks = _as_cidrs(value)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"SAVE_SYNC_TRUSTED_PROXY_CIDRS is not a valid comma-separated CIDR list: {exc}"
+        ) from exc
+    if not networks:
+        raise RuntimeError("SAVE_SYNC_TRUSTED_PROXY_CIDRS must list at least one CIDR")
+    return networks
+
+
+def extract_client_ip(request, trusted_cidrs=None):
+    """Best-effort public client IP behind a reverse proxy.
+
+    Never trusts X-Forwarded-For blindly: the direct TCP peer (recovered
+    from before ProxyFix rewrote it) must fall inside the explicitly
+    configured proxy CIDRs, otherwise the peer itself is returned and
+    headers are ignored. With a trusted peer, X-Forwarded-For is walked
+    right-to-left skipping trusted proxies, so client-supplied spoofed
+    entries on the left and chained proxies on the right are both handled.
+    Returns "" when nothing parseable exists.
+    """
+    networks = _as_cidrs(
+        trusted_cidrs if trusted_cidrs else DEFAULT_TRUSTED_PROXY_CIDRS
+    )
+    orig = request.environ.get("werkzeug.proxy_fix.orig") or {}
+    peer = str(orig.get("REMOTE_ADDR") or request.environ.get("REMOTE_ADDR") or "")
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return ""
+    if not any(peer_ip in net for net in networks):
+        return peer
+    chain = [
+        part.strip()
+        for part in request.headers.get("X-Forwarded-For", "").split(",")
+        if part.strip()
+    ]
+    for raw in reversed(chain):
+        try:
+            candidate = ipaddress.ip_address(raw)
+        except ValueError:
+            continue
+        if not any(candidate in net for net in networks):
+            return raw
+    return chain[-1] if chain else peer
 
 
 def register_managed_access_routes(
@@ -183,6 +248,8 @@ def register_managed_access_routes(
                         "userActive": bool(row["user_active"]),
                         "activeTokenCount": row["active_token_count"] or 0,
                         "sessionActive": bool(row["session_active"]),
+                        # Admin-only endpoint: client IPs never leave admin APIs.
+                        "lastIp": row["last_ip"],
                         "createdAt": row["created_at"],
                         "lastSeenAt": row["last_seen_at"],
                         "lastPublishedAt": row["last_published_at"],
@@ -277,3 +344,26 @@ def register_managed_access_routes(
                 changed=sorted(data),
             )
         return jsonify(ok=True)
+
+
+def register_managed_presence_routes(*, routes, transaction, active_lock):
+    @routes("/presence", methods=["GET"])
+    def presence():
+        # ponytail: public lobby readout (state/host/since only). Client IPs
+        # stay admin-only via /admin/hosts and admin /status; never here.
+        # owner_label is always the admin-set display name, never a username,
+        # email or internal id.
+        # Read-only by design: anonymous polling must never compete for the
+        # single SQLite writer with heartbeats, lock acquisition or uploads.
+        with transaction() as db:
+            lock = active_lock(db, clear_expired=False)
+        if not lock:
+            response = jsonify(locked=False)
+        else:
+            response = jsonify(
+                locked=True,
+                owner=lock["owner_label"],
+                since=lock["created_at"],
+            )
+        response.headers["Cache-Control"] = "no-store"
+        return response
