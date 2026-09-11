@@ -2,7 +2,7 @@
 
 `SyncGame.ps1` is the common Windows PowerShell 5.1 launcher. It reads `Adapter` and `GameKey`, validates the adapter manifest and hands control to `adapters/<adapter>/Adapter.ps1`. Machine-specific values live only in `config.json` and DPAPI-protected secrets.
 
-> **Stable scope:** product release `v2.2.2` supports Palworld. The development tree also contains an experimental Valheim 1.0 Windows adapter; it is not part of the `v2.2.2` support promise and must pass its real two-host acceptance checklist before production use.
+> **Stable scope:** product release `v2.2.2` supports Palworld. The development tree also contains an experimental Valheim 1.0 Windows adapter; it is not part of the `v2.2.2` support promise and must pass its real four-host acceptance checklist before production use.
 
 ## Product version vs client version
 
@@ -31,7 +31,7 @@ For a multi-PC Valheim group, register every possible server PC from the Save Sy
 
 The older `Configurar-secretos.cmd`, `Probar-conexion.cmd` and `Iniciar-PalworldSync.cmd` names remain as compatibility aliases.
 
-Do not copy DPAPI secret files between machines: Palworld uses `data/secrets.json` and Valheim uses `data/valheim/secrets.json`. DPAPI binds them to the Windows user and machine that created them.
+Treat DPAPI secret files as local per-host state: Palworld uses `data/secrets.json` and Valheim uses `data/valheim/secrets.json`. Both use Windows user-scoped DPAPI protection, so the files are tied to the protecting Windows user profile and are not a supported way to move credentials between hosts. Provision a separate API token and secrets file on each authorized PC instead of copying one from another machine.
 
 ## Important configuration fields
 
