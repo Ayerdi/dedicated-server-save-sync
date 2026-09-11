@@ -171,6 +171,16 @@ Describe 'Valheim input validation' {
     }
 }
 
+Describe 'Valheim secret protection' {
+    It 'round-trips secrets through Windows DPAPI without PowerShell.Security cmdlets' {
+        $protected = Protect-DpapiString -PlainText 'dummy-secret'
+
+        $protected | Should -Not -Be 'dummy-secret'
+        { [Convert]::FromBase64String($protected) } | Should -Not -Throw
+        (Unprotect-DpapiString -ProtectedText $protected) | Should -Be 'dummy-secret'
+    }
+}
+
 Describe 'Valheim session safety' {
     It 'rejects a pending session when the lock base advanced during acquisition' {
         $pending = [pscustomobject]@{ baseVersion = 4; worldUid = '42' }

@@ -13,6 +13,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Net.Http
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch {}
 
 $AdapterRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ScriptRoot = if ([string]::IsNullOrWhiteSpace($ClientRoot)) { $AdapterRoot } else { [IO.Path]::GetFullPath($ClientRoot) }
@@ -75,6 +76,51 @@ function Convert-SecureStringToPlainText {
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
 }
 
+function Get-DpapiEntropy {
+    return [Text.Encoding]::UTF8.GetBytes('dedicated-server-save-sync:valheim:secrets:v2')
+}
+
+function Protect-DpapiString {
+    param([string]$PlainText)
+    $plainBytes = [Text.Encoding]::UTF8.GetBytes($PlainText)
+    $entropy = Get-DpapiEntropy
+    $protectedBytes = $null
+    try {
+        $protectedBytes = [Security.Cryptography.ProtectedData]::Protect(
+            $plainBytes,
+            $entropy,
+            [Security.Cryptography.DataProtectionScope]::CurrentUser
+        )
+        return [Convert]::ToBase64String($protectedBytes)
+    }
+    finally {
+        if ($null -ne $plainBytes) { [Array]::Clear($plainBytes, 0, $plainBytes.Length) }
+        if ($null -ne $protectedBytes) { [Array]::Clear($protectedBytes, 0, $protectedBytes.Length) }
+        if ($null -ne $entropy) { [Array]::Clear($entropy, 0, $entropy.Length) }
+    }
+}
+
+function Unprotect-DpapiString {
+    param([string]$ProtectedText)
+    $protectedBytes = $null
+    $plainBytes = $null
+    $entropy = Get-DpapiEntropy
+    try {
+        $protectedBytes = [Convert]::FromBase64String($ProtectedText)
+        $plainBytes = [Security.Cryptography.ProtectedData]::Unprotect(
+            $protectedBytes,
+            $entropy,
+            [Security.Cryptography.DataProtectionScope]::CurrentUser
+        )
+        return [Text.Encoding]::UTF8.GetString($plainBytes)
+    }
+    finally {
+        if ($null -ne $protectedBytes) { [Array]::Clear($protectedBytes, 0, $protectedBytes.Length) }
+        if ($null -ne $plainBytes) { [Array]::Clear($plainBytes, 0, $plainBytes.Length) }
+        if ($null -ne $entropy) { [Array]::Clear($entropy, 0, $entropy.Length) }
+    }
+}
+
 function Protect-SecretsFile {
     param([string]$Path)
     try {
@@ -103,10 +149,11 @@ function Initialize-Secrets {
     } while (-not $passwordValid)
 
     $protected = [ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
         gameKey = 'valheim'
-        apiToken = ($tokenSecure | ConvertFrom-SecureString)
-        serverPassword = ($passwordSecure | ConvertFrom-SecureString)
+        protection = 'dpapi-current-user'
+        apiToken = Protect-DpapiString -PlainText $tokenPlain
+        serverPassword = Protect-DpapiString -PlainText $passwordPlain
         createdAtUtc = [DateTime]::UtcNow.ToString('o')
         windowsUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     }
@@ -126,13 +173,15 @@ function Get-Secrets {
     if ($null -ne $stored.PSObject.Properties['gameKey'] -and [string]$stored.gameKey -ne 'valheim') {
         throw 'data\valheim\secrets.json belongs to another adapter. Preserve it and reconfigure the Valheim secrets.'
     }
+    $schemaVersion = if ($null -ne $stored.PSObject.Properties['schemaVersion']) { [int]$stored.schemaVersion } else { 1 }
+    if ($schemaVersion -ne 2 -or [string]$stored.protection -ne 'dpapi-current-user') {
+        throw 'The Valheim secrets file uses a legacy protection format. Run Configure-Secrets.cmd to recreate it.'
+    }
     try {
-        $tokenSecure = ConvertTo-SecureString ([string]$stored.apiToken)
-        $passwordSecure = ConvertTo-SecureString ([string]$stored.serverPassword)
+        $token = Unprotect-DpapiString -ProtectedText ([string]$stored.apiToken)
+        $password = Unprotect-DpapiString -ProtectedText ([string]$stored.serverPassword)
     }
     catch { throw 'The credentials could not be decrypted by this Windows user. Run Configure-Secrets.cmd.' }
-    $token = Convert-SecureStringToPlainText -SecureString $tokenSecure
-    $password = Convert-SecureStringToPlainText -SecureString $passwordSecure
     if ($token -notmatch '^pws_[A-Za-z0-9_-]{48}$') { throw 'The decrypted API token is invalid.' }
     if ([string]::IsNullOrWhiteSpace($password) -or $password.Length -lt 5) { throw 'The decrypted Valheim server password is invalid.' }
     return [pscustomobject]@{ ApiToken = $token; ServerPassword = $password }
