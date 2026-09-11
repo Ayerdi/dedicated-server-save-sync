@@ -182,6 +182,13 @@ Describe 'Valheim secret protection' {
 }
 
 Describe 'Valheim session safety' {
+    BeforeEach {
+        $script:Config = [pscustomobject]@{
+            ShutdownTimeoutSeconds = 180
+            PostExitGraceSeconds = 2
+        }
+    }
+
     It 'rejects a pending session when the lock base advanced during acquisition' {
         $pending = [pscustomobject]@{ baseVersion = 4; worldUid = '42' }
         $lock = [pscustomobject]@{ baseVersion = 5; worldUid = '42' }
@@ -198,7 +205,7 @@ Describe 'Valheim session safety' {
             Should -Throw '*does not match the newly acquired lock*'
     }
 
-    It 'requires three heartbeat attempts to fit before lock expiry' {
+    It 'requires one heartbeat attempt plus the clean-shutdown reserve to fit before lock expiry' {
         $healthyLock = [pscustomobject]@{ expiresAt = [DateTimeOffset]::UtcNow.AddSeconds(300).ToString('o') }
         $shortLock = [pscustomobject]@{ expiresAt = [DateTimeOffset]::UtcNow.AddSeconds(120).ToString('o') }
 
@@ -206,6 +213,29 @@ Describe 'Valheim session safety' {
             Should -Not -Throw
         { Assert-HeartbeatFitsLockTtl -Lock $shortLock -IntervalSeconds 60 } |
             Should -Throw '*too large for the acquired lock TTL*'
+    }
+
+    It 'fails closed while there is still enough lease left for a clean shutdown' {
+        $stateFile = Join-Path $TestDrive 'shutdown-reserve-heartbeat.json'
+        Write-JsonAtomic -Path $stateFile -Value ([ordered]@{
+            status = 'degraded'
+            expiresAt = [DateTimeOffset]::UtcNow.AddSeconds(185).ToString('o')
+            consecutiveFailures = 1
+        })
+
+        Get-ShutdownSafetyReserveSeconds | Should -Be 192
+        Get-HeartbeatStatus -Job $null -StateFile $stateFile | Should -Be 'fatal'
+    }
+
+    It 'keeps a degraded heartbeat usable while the clean-shutdown reserve is still protected' {
+        $stateFile = Join-Path $TestDrive 'outside-shutdown-reserve-heartbeat.json'
+        Write-JsonAtomic -Path $stateFile -Value ([ordered]@{
+            status = 'degraded'
+            expiresAt = [DateTimeOffset]::UtcNow.AddSeconds(220).ToString('o')
+            consecutiveFailures = 1
+        })
+
+        Get-HeartbeatStatus -Job $null -StateFile $stateFile | Should -Be 'degraded'
     }
 
     It 'fails heartbeat status closed when the last known lock expiry is stale' {

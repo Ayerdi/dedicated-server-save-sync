@@ -627,6 +627,13 @@ function Get-HeartbeatRequestTimeoutSeconds {
     return [int][Math]::Max(1, [Math]::Min(30, [Math]::Floor($IntervalSeconds / 2.0)))
 }
 
+function Get-ShutdownSafetyReserveSeconds {
+    # Fail closed early enough that a controlled shutdown can finish before
+    # another host is allowed to acquire the same lease after TTL expiry.
+    return [int]$script:Config.ShutdownTimeoutSeconds +
+        [int]$script:Config.PostExitGraceSeconds + 10
+}
+
 function Start-HeartbeatJob {
     param([string]$ApiBaseUrl, [string]$Token, [string]$SessionId, [int]$IntervalSeconds, [string]$StateFile, [string]$InitialExpiresAt)
     Remove-Item -LiteralPath $StateFile -Force -ErrorAction SilentlyContinue
@@ -683,8 +690,9 @@ function Assert-HeartbeatFitsLockTtl {
     $remainingSeconds = ($expiresAt - [DateTimeOffset]::UtcNow).TotalSeconds
     if ($remainingSeconds -le 5) { throw 'The acquired lock is already too close to expiry.' }
     $requestTimeoutSeconds = Get-HeartbeatRequestTimeoutSeconds -IntervalSeconds $IntervalSeconds
-    if ((($IntervalSeconds + $requestTimeoutSeconds) * 3) -ge ($remainingSeconds - 5)) {
-        throw "HeartbeatSeconds=$IntervalSeconds is too large for the acquired lock TTL; three heartbeat attempts must fit before expiry."
+    $shutdownReserveSeconds = Get-ShutdownSafetyReserveSeconds
+    if (($IntervalSeconds + $requestTimeoutSeconds + $shutdownReserveSeconds) -ge ($remainingSeconds - 5)) {
+        throw "HeartbeatSeconds=$IntervalSeconds is too large for the acquired lock TTL; one heartbeat attempt plus the clean-shutdown safety reserve must fit before expiry."
     }
 }
 
@@ -696,7 +704,7 @@ function Get-HeartbeatStatus {
             $state = Read-JsonFile $StateFile
             if ($null -eq $state -or $null -eq $state.PSObject.Properties['expiresAt'] -or [string]::IsNullOrWhiteSpace([string]$state.expiresAt)) { return 'fatal' }
             $expiresAt = [DateTimeOffset]::Parse([string]$state.expiresAt, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
-            if (($expiresAt - [DateTimeOffset]::UtcNow).TotalSeconds -le 5) { return 'fatal' }
+            if (($expiresAt - [DateTimeOffset]::UtcNow).TotalSeconds -le (Get-ShutdownSafetyReserveSeconds)) { return 'fatal' }
             return [string]$state.status
         }
         catch { return 'fatal' }
