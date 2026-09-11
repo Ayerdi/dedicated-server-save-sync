@@ -100,7 +100,7 @@ A singleton `flock` prevents two supervisors from consuming the same storage con
 
 - SQLite uses WAL mode and `busy_timeout`.
 - Schema creation/migration is protected by a multiprocess `flock`.
-- `PRAGMA user_version=4` identifies the supported schema.
+- `PRAGMA user_version=5` identifies the supported schema.
 - A newer schema is rejected rather than implicitly downgraded.
 - Two simultaneous lock acquisitions produce one winner.
 - Two uploads based on the same version cannot both publish.

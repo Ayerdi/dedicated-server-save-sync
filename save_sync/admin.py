@@ -1,6 +1,7 @@
 import json
+import os
 
-from flask import g, jsonify, request
+from flask import Response, g, jsonify, request
 
 
 def register_admin_routes(
@@ -16,6 +17,8 @@ def register_admin_routes(
     iso,
     utcnow,
     token_factory,
+    game_key,
+    display_username,
 ):
     @routes("/admin/force-unlock", methods=["POST"])
     @secured(admin=True)
@@ -163,4 +166,71 @@ def register_admin_routes(
                 }
                 for row in rows
             ]
+        )
+
+    @routes("/admin/hosts/<int:host_id>/client-config", methods=["GET"])
+    @secured(admin=True)
+    def host_client_config(host_id):
+        # ponytail: per-PC config.json download. GET + admin-only (bound tokens
+        # and players are rejected by secured()) makes it CSRF-safe; the file
+        # carries identity/URLs/paths only, never tokens or secrets.
+        if not managed_hosts:
+            return error(
+                "not_found",
+                "Managed computers are not enabled for this game.",
+                404,
+            )
+        with transaction() as db:
+            host = db.execute(
+                "SELECT h.*,u.username,u.display_name FROM authorized_hosts h "
+                "JOIN users u ON u.id=h.user_id WHERE h.id=?",
+                (host_id,),
+            ).fetchone()
+        if not host:
+            return error("host_not_found", "Computer not found.", 404)
+        # Canonical source only: SAVE_SYNC_PUBLIC_BASE_URL is mandatory at
+        # deploy time. Never build URLs from Host/X-Forwarded-Host (client
+        # controlled) — fail closed instead.
+        base_url = os.environ.get("SAVE_SYNC_PUBLIC_BASE_URL", "").strip().rstrip("/")
+        if not base_url:
+            return error(
+                "server_misconfigured",
+                "SAVE_SYNC_PUBLIC_BASE_URL is not configured.",
+                500,
+            )
+        config = {
+            "Adapter": game_key,
+            "GameKey": game_key,
+            "PlayerName": display_username(host["username"], host["display_name"]),
+            "ClientId": host["client_id"],
+            "ApiBaseUrl": base_url + f"/api/games/{game_key}",
+        }
+        if game_key == "valheim":
+            config.update(
+                {
+                    "ServerRoot": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Valheim dedicated server",
+                    "ServerExecutable": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Valheim dedicated server\\valheim_server.exe",
+                    "SaveRoot": "EDIT: C:\\Users\\YOUR_USER\\AppData\\LocalLow\\IronGate\\Valheim",
+                    "WorldName": "EDIT: your world name",
+                    "ServerName": "EDIT: visible server name",
+                    "ServerPort": 2456,
+                    "Public": False,
+                    "Crossplay": False,
+                    "ServerArguments": [],
+                    "HeartbeatSeconds": 60,
+                    "StartupTimeoutSeconds": 180,
+                    "StartupReadyPattern": "Game server connected",
+                    "ShutdownTimeoutSeconds": 180,
+                    "PostExitGraceSeconds": 2,
+                    "LocalBackupRetention": 5,
+                }
+            )
+        return Response(
+            json.dumps(config, indent=2, ensure_ascii=False),
+            mimetype="application/json",
+            headers={
+                "Content-Disposition": (
+                    f"attachment; filename=config.{host['client_id']}.json"
+                )
+            },
         )

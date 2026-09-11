@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE TABLE IF NOT EXISTS authorized_hosts (
  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), client_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
- active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)), created_at TEXT NOT NULL, last_seen_at TEXT, last_published_at TEXT
+ active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)), created_at TEXT NOT NULL, last_seen_at TEXT, last_published_at TEXT,
+ last_ip TEXT
 );
 CREATE TABLE IF NOT EXISTS api_tokens (
  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
@@ -121,6 +122,14 @@ def bootstrap_database(
                 db.execute(
                     "ALTER TABLE active_lock ADD COLUMN host_id INTEGER REFERENCES authorized_hosts(id)"
                 )
+
+            # Schema 5: track the last public IP per managed computer (admin-only).
+            if database_version < 5:
+                host_columns = {
+                    row[1] for row in db.execute("PRAGMA table_info(authorized_hosts)")
+                }
+                if "last_ip" not in host_columns:
+                    db.execute("ALTER TABLE authorized_hosts ADD COLUMN last_ip TEXT")
 
             version_columns = {row[1] for row in db.execute("PRAGMA table_info(versions)")}
             if "world_guid" in version_columns:

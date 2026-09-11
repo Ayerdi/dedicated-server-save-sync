@@ -55,10 +55,12 @@ Save Sync v2 must not be pointed directly at a legacy Palworld Sync v1 database.
 | `SAVE_SYNC_BACKUP_POLL_SECONDS` | SQLite queue polling interval; default 1 |
 | `SAVE_SYNC_PROXY_SECRET` | Internal proxy/backend secret |
 | `SAVE_SYNC_CSRF_SECRET` | Panel CSRF signing secret |
+| `SAVE_SYNC_TRUSTED_PROXY_CIDRS` | Proxy ranges trusted for client IP extraction (managed `last_ip` only); default loopback |
 
 The two final secrets must be independent, random values of at least 32 characters and must never appear in logs or Git.
+`SAVE_SYNC_TRUSTED_PROXY_CIDRS` is a comma-separated list of the real reverse-proxy networks; deployments behind Docker/Traefik must add their proxy CIDR or the recorded IP falls back to the direct peer.
 
-When `game.json` enables `managedHosts`, `SAVE_SYNC_WEB_USERS` and `SAVE_SYNC_USER_IDENTITIES_JSON` seed users that do not already exist. Schema 4 then makes the database authoritative for subsequent role, display-name, slot and enabled/disabled changes, so restarting the container does not overwrite panel-managed access. Authentik still authenticates the username; Save Sync decides whether that username is active and which computers it may use. With `managedHosts` disabled, as in Palworld, the existing config-managed access behavior is preserved.
+When `game.json` enables `managedHosts`, `SAVE_SYNC_WEB_USERS` and `SAVE_SYNC_USER_IDENTITIES_JSON` seed users that do not already exist. Schema 5 then makes the database authoritative for subsequent role, display-name, slot and enabled/disabled changes, so restarting the container does not overwrite panel-managed access. Authentik still authenticates the username; Save Sync decides whether that username is active and which computers it may use. With `managedHosts` disabled, as in Palworld, the existing config-managed access behavior is preserved.
 
 For games with `managedHosts` enabled, administrators can manage users, computers and computer-bound API tokens from `/games/<gameKey>`. Register each physical PC with a unique stable `ClientId`, then create a token for that computer and put that token only on that PC. Managed lock acquisition requires a computer-bound token whose registered `ClientId` exactly matches the client request. Legacy unbound tokens remain visible for migration/administration but cannot start a managed game session and should be rotated.
 
@@ -168,6 +170,26 @@ To restore an incompatible older image:
 5. restore a matching SQLite snapshot to a temporary file on the same filesystem, fsync it and publish it atomically;
 6. do not reuse WAL sidecars from another run;
 7. start the older image and verify it before reopening the route.
+
+### Schema 5 rollback (managed `last_ip`)
+
+Schema 5 adds `authorized_hosts.last_ip` (`PRAGMA user_version` 4 → 5). The
+application migrates forward automatically on startup and refuses newer
+schemas, but it never downgrades: deploying pre-schema-5 code against a
+schema-5 database fails at startup. Rollback across this boundary requires
+restoring a coherent bundle, not just the database file:
+
+1. a schema-4 SQLite snapshot (`PRAGMA user_version=4`, no `last_ip`);
+2. every ZIP referenced by that snapshot's `versions.path`, copied from live
+   storage at snapshot time — retention deletes unreferenced ZIPs, so an old
+   snapshot alone may point at files that no longer exist;
+3. verify the bundle before trusting it: `PRAGMA integrity_check`,
+   `foreign_key_check`, and every `versions.path` present in the bundle.
+
+Keep the bundle outside the repository on operator-managed storage and never
+commit real deployment paths. Refresh it before any further schema change;
+any deployment already running schema 5 needs one until the merge is
+deployed everywhere.
 
 ## Common incidents
 

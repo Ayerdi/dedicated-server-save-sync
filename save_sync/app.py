@@ -25,7 +25,12 @@ from save_sync.domain import SaveSyncDomainError
 from save_sync.game_config import load_game_configuration
 from save_sync.identities import identity_for_username as resolve_identity_for_username
 from save_sync.identities import load_identities
-from save_sync.managed import register_managed_access_routes
+from save_sync.managed import (
+    extract_client_ip,
+    parse_trusted_proxy_cidrs,
+    register_managed_access_routes,
+    register_managed_presence_routes,
+)
 from save_sync.panels import register_panel_routes
 from save_sync.publications import PublicationService
 from save_sync.retention import (
@@ -76,6 +81,7 @@ DEFAULTS = {
     ),
     "SAVE_SYNC_REQUIRE_HTTPS": True,
     "SAVE_SYNC_PROXY_SECRET": "",
+    "SAVE_SYNC_TRUSTED_PROXY_CIDRS": "127.0.0.0/8,::1/128",
     "SAVE_SYNC_RETENTION_PER_SLOT": 1,
     "SAVE_SYNC_POST_PUBLISH_COMMAND": "",
     "SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS": 1800,
@@ -100,6 +106,7 @@ def create_app(config=None):
         raise RuntimeError("SAVE_SYNC_RETENTION_PER_SLOT must be >= 1")
     if int(app.config["SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS"]) < 1:
         raise RuntimeError("SAVE_SYNC_POST_PUBLISH_TIMEOUT_SECONDS must be >= 1")
+    parse_trusted_proxy_cidrs(app.config["SAVE_SYNC_TRUSTED_PROXY_CIDRS"])
     game_config = load_game_configuration(app.config)
     game_key = game_config.key
     display_game = game_config.display_name
@@ -827,6 +834,16 @@ def create_app(config=None):
                     updatedClientId=author["client_id"] if author else None,
                     updatedHostName=author["host_name"] if author else None,
                 )
+            # Client IPs are admin-only: bound computer tokens and players
+            # never see them, even though they may read /status.
+            caller = g.save_sync_user
+            if (
+                managed_hosts
+                and lock
+                and caller["role"] == "admin"
+                and dict(caller).get("token_host_id") is None
+            ):
+                result["lock"]["hostIp"] = lock["host_ip"]
             result.update(identity_json(version["save_identity"] if version else None))
         return jsonify(result)
 
@@ -849,6 +866,10 @@ def create_app(config=None):
                 owner=data.get("owner"),
                 client_id=data.get("clientId"),
                 session_id=session_id,
+                client_ip=extract_client_ip(
+                    request,
+                    trusted_cidrs=app.config["SAVE_SYNC_TRUSTED_PROXY_CIDRS"],
+                ),
             )
         except SaveSyncDomainError as exc:
             return domain_error_response(exc)
@@ -869,6 +890,12 @@ def create_app(config=None):
                 session_id=data.get("sessionId"),
                 event=event,
                 delete=delete,
+                client_ip=extract_client_ip(
+                    request,
+                    trusted_cidrs=app.config["SAVE_SYNC_TRUSTED_PROXY_CIDRS"],
+                )
+                if not delete
+                else None,
             )
         except SaveSyncDomainError as exc:
             return domain_error_response(exc)
@@ -1065,6 +1092,11 @@ def create_app(config=None):
             iso=iso,
             utcnow=utcnow,
         )
+        register_managed_presence_routes(
+            routes=routes,
+            transaction=transaction,
+            active_lock=active_lock,
+        )
 
     register_admin_routes(
         routes=routes,
@@ -1078,6 +1110,8 @@ def create_app(config=None):
         iso=iso,
         utcnow=utcnow,
         token_factory=lambda: "pws_" + secrets.token_urlsafe(36),
+        game_key=game_key,
+        display_username=display_username,
     )
 
     register_panel_routes(
