@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import sqlite3
 import threading
 from pathlib import Path
@@ -234,6 +235,10 @@ def test_token_revoked_after_auth_cannot_acquire_managed_lock(app, client, monke
     assert result["body"]["error"] == "access_revoked"
     with app.extensions["save_sync_connect"]() as db:
         assert db.execute("SELECT COUNT(*) FROM active_lock").fetchone()[0] == 0
+        rejection = db.execute(
+            "SELECT details FROM audit WHERE event='lock_rejected' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert json.loads(rejection["details"])["reason"] == "access_revoked"
 
 
 def test_token_revoked_after_auth_cannot_extend_managed_heartbeat(
