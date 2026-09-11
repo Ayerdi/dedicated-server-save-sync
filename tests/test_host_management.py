@@ -530,10 +530,15 @@ def test_palworld_keeps_legacy_unmanaged_host_flow(tmp_path):
     created_legacy_token = palworld.post(
         "/api/games/palworld/admin/tokens",
         headers=headers,
-        json={"username": "admin", "name": "x" * 101},
+        json={"username": "admin", "name": "x" * 101, "hostId": 999},
     )
     assert created_legacy_token.status_code == 201
     assert set(created_legacy_token.get_json()) == {"id", "token", "username", "name"}
+    legacy_audit = palworld.get(
+        "/api/games/palworld/admin/audit?limit=10", headers=headers
+    ).get_json()["events"]
+    token_created = next(item for item in legacy_audit if item["event"] == "token_created")
+    assert set(token_created["details"]) == {"tokenId", "username"}
 
     acquired = palworld.post(
         "/api/games/palworld/lock",
@@ -560,6 +565,14 @@ def test_palworld_keeps_legacy_unmanaged_host_flow(tmp_path):
     assert "body{max-width:980px;margin:3rem auto" in text
     assert 'id="tokenName"' in text
     assert 'id="accessCard"' not in text
+    wrong_case_panel = palworld.get(
+        "/games/palworld",
+        headers={
+            "X-authentik-username": "ADMIN",
+            "X-Palworld-Proxy-Secret": "proxy-test-secret",
+        },
+    )
+    assert wrong_case_panel.status_code == 403
 
 
 def test_schema_three_migrates_managed_host_columns(tmp_path):

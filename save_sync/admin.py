@@ -62,16 +62,14 @@ def register_admin_routes(
         data = request.get_json(silent=True) or {}
         username = str(data.get("username", ""))
         name = str(data.get("name", "")).strip()
-        host_id = data.get("hostId")
+        host_id = data.get("hostId") if managed_hosts else None
         if managed_hosts and host_id is None:
             return error(
                 "invalid_request",
                 "hostId is required for games with managed computers.",
                 400,
             )
-        if host_id is not None and not managed_hosts:
-            return error("invalid_request", "hostId is not supported for this game.", 400)
-        if host_id is not None:
+        if managed_hosts:
             try:
                 host_id = int(host_id)
             except (TypeError, ValueError):
@@ -99,18 +97,28 @@ def register_admin_routes(
                     return error(
                         "host_disabled", "Enable the computer before creating a token.", 409
                     )
-            cursor = db.execute(
-                "INSERT INTO api_tokens(user_id,name,token_hash,created_at,host_id) VALUES(?,?,?,?,?)",
-                (user["id"], name, digest(token), iso(utcnow()), host_id),
-            )
+            if managed_hosts:
+                cursor = db.execute(
+                    "INSERT INTO api_tokens(user_id,name,token_hash,created_at,host_id) VALUES(?,?,?,?,?)",
+                    (user["id"], name, digest(token), iso(utcnow()), host_id),
+                )
+            else:
+                cursor = db.execute(
+                    "INSERT INTO api_tokens(user_id,name,token_hash,created_at) VALUES(?,?,?,?)",
+                    (user["id"], name, digest(token), iso(utcnow())),
+                )
+            audit_details = {
+                "tokenId": cursor.lastrowid,
+                "username": username,
+            }
+            if managed_hosts:
+                audit_details["hostId"] = host_id
             audit(
                 db,
                 "token_created",
                 g.save_sync_user,
                 True,
-                tokenId=cursor.lastrowid,
-                username=username,
-                hostId=host_id,
+                **audit_details,
             )
         response = {
             "id": cursor.lastrowid,

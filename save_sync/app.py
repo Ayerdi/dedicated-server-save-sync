@@ -411,7 +411,7 @@ def create_app(config=None):
         if not username:
             return None, "identity_required"
         user = db.execute(
-            "SELECT * FROM users WHERE username=? COLLATE NOCASE AND active=1", (username,)
+            "SELECT * FROM users WHERE username=? AND active=1", (username,)
         ).fetchone()
         if not user:
             return None, "web_user_not_allowed"
